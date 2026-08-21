@@ -102,7 +102,7 @@ pip install -r requirements.txt
 python scripts/local_dry_run.py --brand Toyota --model Corolla
 
 # Kjør enhetstester (ingen nettverkskall, bruker lagrede eksempelsider):
-pytest tests/ -v
+python -m pytest tests/ -v
 
 # Når du har satt opp .env (se .env.example) kan du teste ekte skriving:
 python scripts/local_dry_run.py --brand Toyota --model Corolla --write
