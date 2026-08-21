@@ -1,0 +1,11 @@
+.env
+*.json
+!tests/fixtures/*.json
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+.DS_Store
+local_dry_run_output/

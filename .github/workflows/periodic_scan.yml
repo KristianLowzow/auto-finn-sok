@@ -1,0 +1,37 @@
+name: Periodisk skann av Finn.no
+
+on:
+  schedule:
+    # Én gang i døgnet, kl 06 UTC. Endre selv her hvis du vil ha annen frekvens --
+    # cron-syntaks er "minutt time dag måned ukedag", alle i UTC.
+    # Eksempler: "0 6,18 * * *" = to ganger i døgnet, "0 */6 * * *" = hver 6. time,
+    # "0 * * * *" = hver time (høyere risiko for blokkering, se README).
+    - cron: "0 6 * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: periodisk-skann
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - run: pip install -r requirements.txt
+
+      - name: Kjør skanning
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          SHEET_ID: ${{ secrets.SHEET_ID }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_APP_PASSWORD: ${{ secrets.SMTP_APP_PASSWORD }}
+          ALERT_EMAIL_TO: ${{ secrets.ALERT_EMAIL_TO }}
+        run: python -m src.main
