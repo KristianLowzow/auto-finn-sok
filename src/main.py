@@ -105,7 +105,7 @@ def _process_brand_model(client, spreadsheet, setting, all_active_listings, now_
 def _score_all(all_listings, history_df, overrides, now_iso):
     lookback_cutoff = datetime.now(timezone.utc) - timedelta(days=overrides["LookbackDager"])
 
-    active_df = pd.DataFrame([l.to_row() for l in all_listings], columns=Listing.columns())
+    active_df = _listings_to_df(all_listings)
     combined_frames = [active_df]
     if not history_df.empty:
         combined_frames.append(history_df[Listing.columns()])
@@ -191,7 +191,7 @@ def run():
         sheets_client.write_active_listings(spreadsheet, all_listings)
         sheets_client.apply_conditional_formatting(spreadsheet)
 
-        updated_active_df = _listings_to_df(all_listings)
+        updated_active_df = pd.DataFrame([l.to_row() for l in all_listings], columns=Listing.columns())
         stat_tables = {
             "Prisutvikling per uke": stats.build_price_trend(active_df, history_df),
             "Prisutvikling per årsmodell": stats.build_price_by_year(updated_active_df, history_df),
