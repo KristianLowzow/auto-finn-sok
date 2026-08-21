@@ -1,21 +1,22 @@
 import pandas as pd
 
 from src.models import Listing
-from src.scoring import LABEL_DYRT, LABEL_GODT_KJOP, LABEL_IKKE_NOK_DATA, compute_score
+from src.scoring import LABEL_DYRT, LABEL_GODT_KJOP, LABEL_IKKE_NOK_DATA, compute_score, evaluate_deal
 
 
-def _cohort(prices, years=None, kms=None, start_id=1):
+def _cohort(prices, years=None, kms=None, ranges=None, start_id=1):
     n = len(prices)
     years = years or [2019] * n
     kms = kms or [50000] * n
-    return pd.DataFrame(
-        {
-            "finn_id": [str(start_id + i) for i in range(n)],
-            "pris": prices,
-            "aarsmodell": years,
-            "kilometerstand": kms,
-        }
-    )
+    data = {
+        "finn_id": [str(start_id + i) for i in range(n)],
+        "pris": prices,
+        "aarsmodell": years,
+        "kilometerstand": kms,
+    }
+    if ranges is not None:
+        data["rekkevidde_wltp"] = ranges
+    return pd.DataFrame(data)
 
 
 def test_too_few_comparables_gives_no_score():
@@ -73,3 +74,67 @@ def test_listing_excluded_from_its_own_cohort():
     # kohorten uten seg selv er 4 biler, under min_cohort=5
     assert result.cohort_size == 4
     assert result.label == LABEL_IKKE_NOK_DATA
+
+
+def test_evaluate_deal_flags_exceptional_petrol_car_on_price_and_km_alone():
+    listing = Listing(finn_id="999", url="u", pris=100000, kilometerstand=10000, drivstoff="Bensin")
+    cohort = _cohort(
+        [150000, 160000, 170000, 180000, 190000, 200000],
+        kms=[80000, 85000, 90000, 95000, 100000, 105000],
+    )
+
+    is_exceptional, km_pct, range_pct = evaluate_deal(listing, cohort, min_cohort=5, exceptional_terskel=80)
+
+    assert is_exceptional is True
+    assert km_pct == 100.0
+    assert range_pct is None  # rekkevidde skal ikke kreves for bensinbil
+
+
+def test_evaluate_deal_rejects_car_with_average_mileage():
+    # Billig nok på pris, men midt på treet på km -- skal IKKE regnes som fremragende
+    listing = Listing(finn_id="999", url="u", pris=100000, kilometerstand=95000, drivstoff="Bensin")
+    cohort = _cohort(
+        [150000, 160000, 170000, 180000, 190000, 200000],
+        kms=[50000, 70000, 90000, 100000, 110000, 130000],
+    )
+
+    is_exceptional, km_pct, range_pct = evaluate_deal(listing, cohort, min_cohort=5, exceptional_terskel=80)
+
+    assert is_exceptional is False
+
+
+def test_evaluate_deal_requires_high_range_for_electric_car():
+    listing = Listing(finn_id="999", url="u", pris=100000, kilometerstand=10000, rekkevidde_wltp=300, drivstoff="El")
+    cohort = _cohort(
+        [150000, 160000, 170000, 180000, 190000, 200000],
+        kms=[80000, 85000, 90000, 95000, 100000, 105000],
+        ranges=[350, 360, 370, 380, 390, 400],  # alle har lenger rekkevidde enn kandidaten
+    )
+
+    is_exceptional, km_pct, range_pct = evaluate_deal(listing, cohort, min_cohort=5, exceptional_terskel=80)
+
+    assert is_exceptional is False
+    assert range_pct == 0.0  # kortest rekkevidde i kohorten
+
+
+def test_evaluate_deal_passes_electric_car_with_high_range_too():
+    listing = Listing(finn_id="999", url="u", pris=100000, kilometerstand=10000, rekkevidde_wltp=500, drivstoff="El")
+    cohort = _cohort(
+        [150000, 160000, 170000, 180000, 190000, 200000],
+        kms=[80000, 85000, 90000, 95000, 100000, 105000],
+        ranges=[350, 360, 370, 380, 390, 400],
+    )
+
+    is_exceptional, km_pct, range_pct = evaluate_deal(listing, cohort, min_cohort=5, exceptional_terskel=80)
+
+    assert is_exceptional is True
+    assert range_pct == 100.0
+
+
+def test_evaluate_deal_too_few_comparables_is_never_exceptional():
+    listing = Listing(finn_id="999", url="u", pris=50000, kilometerstand=1000, drivstoff="Bensin")
+    cohort = _cohort([150000, 160000])  # kun 2
+
+    is_exceptional, km_pct, range_pct = evaluate_deal(listing, cohort, min_cohort=5, exceptional_terskel=80)
+
+    assert is_exceptional is False

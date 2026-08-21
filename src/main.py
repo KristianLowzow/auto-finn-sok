@@ -19,6 +19,13 @@ def _now_iso():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def _listings_to_df(listings):
+    df = pd.DataFrame([l.to_row() for l in listings], columns=Listing.columns())
+    for col in ("pris", "kilometerstand", "rekkevidde_wltp", "aarsmodell", "deal_score"):
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    return df
+
+
 def _days_between(iso_start, iso_now):
     try:
         start = datetime.fromisoformat(iso_start)
@@ -37,6 +44,7 @@ def _build_listing_from_detail(detail, fallback_merke, fallback_modell, now_iso)
         variant=detail.get("variant", ""),
         aarsmodell=detail.get("aarsmodell"),
         kilometerstand=detail.get("kilometerstand"),
+        rekkevidde_wltp=detail.get("rekkevidde_wltp"),
         pris=detail.get("pris"),
         drivstoff=detail.get("drivstoff", ""),
         girkasse=detail.get("girkasse", ""),
@@ -117,7 +125,12 @@ def _score_all(all_listings, history_df, overrides, now_iso):
         result = scoring.compute_score(listing, cohort, overrides["MinKohort"], overrides["RegresjonKohort"])
         listing.deal_score = result.score
         listing.deal_label = result.label
-        scored.append((listing, result))
+
+        is_exceptional, km_percentile, range_percentile = scoring.evaluate_deal(
+            listing, cohort, overrides["MinKohort"], overrides["GodtKjopTerskel"]
+        )
+        listing.fremragende_kjop = is_exceptional
+        scored.append((listing, result, km_percentile, range_percentile))
     return scored
 
 
@@ -143,11 +156,9 @@ def run():
 
         client = FinnClient()
         all_listings = []
-        newly_discovered = []
         for setting in settings:
-            merged, new_listings = _process_brand_model(client, spreadsheet, setting, previous_listings, now_iso, run_stats)
+            merged, _new_listings = _process_brand_model(client, spreadsheet, setting, previous_listings, now_iso, run_stats)
             all_listings.extend(merged)
-            newly_discovered.extend(new_listings)
 
         untouched = [
             l for l in previous_listings
@@ -157,24 +168,36 @@ def run():
 
         scored = _score_all(all_listings, history_df, overrides, now_iso)
 
-        newly_discovered_ids = {l.finn_id for l in newly_discovered}
-        for listing, result in scored:
-            if (
-                listing.finn_id in newly_discovered_ids
-                and result.score is not None
-                and result.score >= overrides["GodtKjopTerskel"]
-                and not listing.varslet
-            ):
-                if notifier.send_good_deal_alert(listing, result):
+        alert_price_cap = {}
+        for setting in settings:
+            cap = setting.get("alert_max_price")
+            alert_price_cap[(setting["merke"], setting["modell"])] = float(cap) if cap else overrides["StandardMaksPrisVarsel"]
+
+        digest_candidates = []
+        for listing, result, km_percentile, range_percentile in scored:
+            if not listing.fremragende_kjop or listing.varslet or listing.pris is None:
+                continue
+            cap = alert_price_cap.get((listing.merke, listing.modell), overrides["StandardMaksPrisVarsel"])
+            if listing.pris > cap:
+                continue
+            digest_candidates.append((listing, result, km_percentile, range_percentile))
+
+        if digest_candidates:
+            if notifier.send_daily_digest(digest_candidates):
+                for listing, *_ in digest_candidates:
                     listing.varslet = True
+            logger.info("%d fremragende kjøp funnet, digest-e-post sendt", len(digest_candidates))
 
         sheets_client.write_active_listings(spreadsheet, all_listings)
+        sheets_client.apply_conditional_formatting(spreadsheet)
 
+        updated_active_df = _listings_to_df(all_listings)
         stat_tables = {
             "Prisutvikling per uke": stats.build_price_trend(active_df, history_df),
-            "Pris vs. kilometerstand (aktive)": stats.build_price_vs_km(pd.DataFrame([l.to_row() for l in all_listings], columns=Listing.columns())),
+            "Prisutvikling per årsmodell": stats.build_price_by_year(updated_active_df, history_df),
+            "Pris vs. kilometerstand (aktive)": stats.build_price_vs_km(updated_active_df),
             "Nye/fjernet per uke": stats.build_new_removed_counts(active_df, history_df),
-            "Fordeling av vurdering": stats.build_score_distribution(pd.DataFrame([l.to_row() for l in all_listings], columns=Listing.columns())),
+            "Fordeling av vurdering": stats.build_score_distribution(updated_active_df),
         }
         sheets_client.write_stats_tables(spreadsheet, stat_tables)
 

@@ -114,6 +114,13 @@ _FIELD_MAP = {
     "modell": "modell_dt",
 }
 
+# Noen felt (f.eks. rekkevidde) har en skjult forklaringstekst limt rett inn i
+# <dt>-teksten uten mellomrom (f.eks. "Rekkevidde (WLTP)WLTP er et måltall...").
+# Disse matches på prefiks i stedet for eksakt likhet.
+_FIELD_PREFIXES = {
+    "rekkevidde": "rekkevidde_wltp",
+}
+
 
 def _parse_key_facts(soup):
     facts = {}
@@ -124,6 +131,11 @@ def _parse_key_facts(soup):
         label = dt.get_text(strip=True).lower()
         value = dd.get_text(strip=True)
         canonical = _FIELD_MAP.get(label)
+        if canonical is None:
+            for prefix, mapped in _FIELD_PREFIXES.items():
+                if label.startswith(prefix):
+                    canonical = mapped
+                    break
         if canonical:
             facts[canonical] = value
         facts.setdefault("_raw", {})[label] = value
@@ -172,6 +184,7 @@ def parse_ad_detail(html, finn_id=None, url=None):
         "modell": model_name,
         "aarsmodell": _clean_int(facts.get("aarsmodell")),
         "kilometerstand": _clean_int(facts.get("kilometerstand")),
+        "rekkevidde_wltp": _clean_int(facts.get("rekkevidde_wltp")),
         "pris": price,
         "drivstoff": facts.get("drivstoff", ""),
         "girkasse": facts.get("girkasse", ""),

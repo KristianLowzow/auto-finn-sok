@@ -33,11 +33,12 @@ SMTP_APP_PASSWORD = _env("SMTP_APP_PASSWORD")
 ALERT_EMAIL_TO = _env("ALERT_EMAIL_TO")
 
 # --- Standardterskler (overstyres av Innstillinger-fanen i arket når den finnes) ---
-DEFAULT_GODT_KJOP_TERSKEL = 75
+DEFAULT_GODT_KJOP_TERSKEL = 75  # brukes både for Deal Label og som persentilkrav for "fremragende kjøp"
 DEFAULT_MIN_COHORT = 5
 DEFAULT_REGRESJON_COHORT = 15
 DEFAULT_LOOKBACK_DAYS = 90
 DEFAULT_GRACE_PERIOD_RUNS = 2
+DEFAULT_MAKS_PRIS_VARSEL = 230000  # brukes når en Merker-rad ikke har egen "Maks pris (varsel)"
 
 # --- Skraping: unngå å belaste/bli blokkert av Finn.no ---
 REQUEST_TIMEOUT_S = 15

@@ -22,6 +22,9 @@ _RESULTS_PER_PAGE = 46  # observert på faktiske søkesider, brukes kun til logg
 
 
 def build_search_url(brand, model, filters=None, page=1):
+    """Bevisst uten prisfilter: vi henter hele prisspennet slik at dyre biler
+    også havner i statistikken, selv om de ikke er aktuelle for e-postvarsel
+    (se scoring.evaluate_deal / config for hvor prisgrensen for varsel brukes)."""
     filters = filters or {}
     query = " ".join(part for part in (brand, model) if part).strip()
     params = {"q": query, "page": page}
@@ -29,8 +32,6 @@ def build_search_url(brand, model, filters=None, page=1):
         params["year_from"] = filters["min_year"]
     if filters.get("max_year"):
         params["year_to"] = filters["max_year"]
-    if filters.get("max_price"):
-        params["price_to"] = filters["max_price"]
     if filters.get("max_km"):
         params["mileage_to"] = filters["max_km"]
     return f"{SEARCH_BASE_URL}?{urlencode(params)}"

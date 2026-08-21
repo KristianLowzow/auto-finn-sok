@@ -14,6 +14,7 @@ class Listing:
     variant: str = ""
     aarsmodell: str = None
     kilometerstand: int = None
+    rekkevidde_wltp: int = None  # km, kun relevant for elbiler
     pris: int = None
     drivstoff: str = ""
     girkasse: str = ""
@@ -25,6 +26,7 @@ class Listing:
     mangler_siden: str = ""  # ISO-dato, satt av tracker ved forsvunnet annonse
     deal_score: float = None
     deal_label: str = ""
+    fremragende_kjop: bool = False  # skiller seg positivt ut på pris, km OG (for elbil) rekkevidde
     varslet: bool = False
 
     @staticmethod

@@ -3,9 +3,10 @@
 Automatisk bilsøker for Finn.no. Følger med på merker/modeller du velger selv,
 samler alle annonser i et Google Sheet med statistikk og grafer, vurderer om
 hver bil er et godt eller dårlig kjøp sammenlignet med lignende biler,
-arkiverer annonser som forsvinner (antatt solgt), og sender deg e-post når
-noe ser ut som et godt kjøp. Kjører gratis i skyen via GitHub Actions --
-PC-en din trenger aldri å være på.
+arkiverer annonser som forsvinner (antatt solgt), og sender deg én samlet
+e-postrapport når noen annonser skiller seg **tydelig** positivt ut på pris,
+kilometerstand og (for elbiler) rekkevidde. Kjører gratis i skyen via GitHub
+Actions -- PC-en din trenger aldri å være på.
 
 ## Viktig om Finn.no sine vilkår
 
@@ -54,10 +55,19 @@ i Kjørelogg-fanen.
    kryss av Aktiv=TRUE. Kjør workflowen manuelt igjen for å bekrefte at den
    plukker opp innstillingen.
 9. **Lag graf-objektene i Statistikk-fanen**: dataene skrives automatisk til
-   faste tabeller der (Prisutvikling per uke, Pris vs. kilometerstand, Nye/
-   fjernet per uke, Fordeling av vurdering) -- sett opp et diagram i Sheets
-   manuelt én gang som peker på hver tabell, så oppdateres grafen automatisk
-   etter hvert som tabellen fylles på nytt hver kjøring.
+   faste tabeller der -- sett opp ett diagram i Sheets manuelt én gang per
+   tabell, så oppdateres grafen automatisk etter hvert som tabellen fylles på
+   nytt hver kjøring:
+   - **Prisutvikling per årsmodell** (X=Årsmodell, Y=Snittpris, én serie per
+     Merke+Modell) -- depresieringskurve, "kurver for hver modell pr år".
+   - **Pris vs. kilometerstand (aktive)** (X=Kilometerstand, Y=Pris) -- filtrer
+     på Merke/Modell for én modell om gangen, og fargelegg punktene etter
+     Vurdering-kolonnen for å se gode/dårlige kjøp visuelt.
+   - Prisutvikling per uke, Nye/fjernet per uke, Fordeling av vurdering.
+
+   I tillegg fargelegges radene i **Aktive Annonser** automatisk hver kjøring:
+   grønt = Godt kjøp, gult = Gjennomsnittlig, rødt = Dyrt, og gull/fet skrift
+   for annonser markert **Fremragende** (se under).
 
 Etter dette går alt av seg selv på cronen.
 
@@ -81,16 +91,39 @@ Finn-URL. Du får svar på e-post (og en rad i "Sjekk enkeltannonse"-fanen) med
 en gang jobben er ferdig -- fungerer fint fra telefonen via GitHub sin app
 eller mobilnettleser.
 
+## Hvordan varsling fungerer ("Fremragende kjøp")
+
+Du får **ikke** e-post for hver "Godt kjøp" -- det ville fort blitt for mange.
+E-post sendes bare for annonser som er markert **Fremragende**, altså biler
+som samtidig er blant de billigste OG har lavest kilometerstand for
+merke+modellen sin (begge over `GodtKjopTerskel`-persentilen), OG -- for
+elbiler -- også har lengst rekkevidde. En bensinbil trenger bare slå ut på
+pris og km; rekkevidde er ikke relevant der.
+
+Alle Fremragende-treff i én kjøring samles i **én** e-postrapport (ikke én
+e-post per bil), med pris/km/rekkevidde-persentilene så du ser hvorfor bilen
+ble plukket ut.
+
+**Maks pris (varsel)** i Merker-fanen er en egen prisgrense *kun* for om noe
+er verdt et varsel -- den påvirker ikke hva som hentes/vises i statistikken.
+Alt innenfor merke+modell hentes og telles med i Aktive Annonser og
+Statistikk uansett pris, slik at dyre biler også bidrar til
+sammenligningsgrunnlaget. Stå tom for en rad betyr at
+`StandardMaksPrisVarsel` (se under) brukes i stedet.
+
 ## Justere terskler uten kodeendring
 
 Innstillinger-fanen i arket lar deg justere:
 
-- `GodtKjopTerskel` -- score (0-100) som utløser e-postvarsel (standard 75)
+- `GodtKjopTerskel` -- persentil (0-100) pris/km/rekkevidde må slå for å telle
+  som Fremragende og utløse e-postvarsel (standard 75)
 - `MinKohort` -- minimum sammenligningsbiler før noen vurdering gis (standard 5)
 - `RegresjonKohort` -- minimum sammenligningsbiler før regresjon brukes i
   stedet for enkel persentilrangering (standard 15)
 - `LookbackDager` -- hvor mange dager bakover som telles med i
   sammenligningsgrunnlaget (standard 90)
+- `StandardMaksPrisVarsel` -- brukes når en Merker-rad ikke har egen "Maks
+  pris (varsel)" (standard 230 000)
 
 ## Lokal testing før du setter opp cronen
 
@@ -108,21 +141,24 @@ python -m pytest tests/ -v
 python scripts/local_dry_run.py --brand Toyota --model Corolla --write
 ```
 
-## Hvordan "godt kjøp" beregnes
+## Hvordan "godt kjøp" (Deal Label) beregnes
 
 Se docstringen øverst i [src/scoring.py](src/scoring.py) -- kort fortalt:
 prisen sammenlignes med andre annonser av samme merke+modell. Med for få
 sammenligningsbiler gis ingen vurdering. Med noen flere rangeres prisen som
 persentil i gruppen. Med mange nok brukes en enkel modell som justerer for
 år og kilometerstand. Modellen blir automatisk mer presis etter hvert som
-data samles opp over uker.
+data samles opp over uker. Dette er den generelle Deal Label-en (Godt kjøp/
+Gjennomsnittlig/Dyrt) som vises for *alle* annonser i Aktive Annonser --
+den strengere "Fremragende"-vurderingen som utløser e-post er beskrevet
+over.
 
 ## Arkets faner
 
 | Fane | Innhold |
 |---|---|
-| Merker | Du redigerer: hvilke merker/modeller som følges, med filtre |
-| Aktive Annonser | Script skriver: alle annonser som er live nå, med vurdering |
+| Merker | Du redigerer: hvilke merker/modeller som følges, årsfilter, km-filter og "Maks pris (varsel)" |
+| Aktive Annonser | Script skriver: alle annonser som er live nå, med Deal Label og Fremragende-markering (fargelagt) |
 | Historikk | Script skriver: annonser som har forsvunnet (antatt solgt) |
 | Statistikk | Script skriver: tabeller grafene dine peker på |
 | Kjørelogg | Script skriver: én rad per kjøring, for feilsøking |

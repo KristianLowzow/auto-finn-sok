@@ -31,10 +31,53 @@ def build_price_trend(active_df, history_df):
 
 
 def build_price_vs_km(active_df):
+    """Ett punkt per aktiv annonse -- lag et punktdiagram (X=Kilometerstand,
+    Y=Pris) og fargelegg etter Vurdering-kolonnen for å se gode/dårlige kjøp
+    på tvers av km-nivå. Filtrer på Merke/Modell i selve arket for én modell
+    om gangen."""
+    cols = ["Merke", "Modell", "Kilometerstand", "Pris", "Vurdering", "Fremragende", "Rekkevidde (WLTP)"]
     if active_df.empty:
-        return pd.DataFrame(columns=["Merke", "Modell", "Kilometerstand", "Pris"])
-    subset = active_df.dropna(subset=["pris", "kilometerstand"])[["merke", "modell", "kilometerstand", "pris"]]
-    return subset.rename(columns={"merke": "Merke", "modell": "Modell", "kilometerstand": "Kilometerstand", "pris": "Pris"})
+        return pd.DataFrame(columns=cols)
+    subset = active_df.dropna(subset=["pris", "kilometerstand"])[
+        ["merke", "modell", "kilometerstand", "pris", "deal_label", "fremragende_kjop", "rekkevidde_wltp"]
+    ]
+    return subset.rename(
+        columns={
+            "merke": "Merke",
+            "modell": "Modell",
+            "kilometerstand": "Kilometerstand",
+            "pris": "Pris",
+            "deal_label": "Vurdering",
+            "fremragende_kjop": "Fremragende",
+            "rekkevidde_wltp": "Rekkevidde (WLTP)",
+        }
+    )
+
+
+def build_price_by_year(active_df, history_df):
+    """Snittpris per merke/modell/årsmodell -- grunnlag for en depresierings-
+    kurve per modell (X=Årsmodell, Y=Snittpris, én serie per Merke+Modell)."""
+    cols = ["Merke", "Modell", "Årsmodell", "Snittpris", "Antall"]
+    frames = []
+    if not active_df.empty:
+        frames.append(active_df[["merke", "modell", "aarsmodell", "pris"]])
+    if not history_df.empty:
+        frames.append(history_df[["merke", "modell", "aarsmodell", "pris"]])
+    if not frames:
+        return pd.DataFrame(columns=cols)
+
+    combined = pd.concat(frames, ignore_index=True).dropna(subset=["pris", "aarsmodell"])
+    if combined.empty:
+        return pd.DataFrame(columns=cols)
+
+    grouped = (
+        combined.groupby(["merke", "modell", "aarsmodell"])["pris"]
+        .agg(["mean", "count"])
+        .reset_index()
+        .rename(columns={"merke": "Merke", "modell": "Modell", "aarsmodell": "Årsmodell", "mean": "Snittpris", "count": "Antall"})
+    )
+    grouped["Snittpris"] = grouped["Snittpris"].round(0)
+    return grouped.sort_values(["Merke", "Modell", "Årsmodell"])
 
 
 def build_new_removed_counts(active_df, history_df):

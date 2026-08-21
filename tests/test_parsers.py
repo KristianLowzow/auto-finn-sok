@@ -60,3 +60,21 @@ def test_parse_ad_detail_raises_when_price_missing():
 def test_finn_id_from_url():
     assert parsers.finn_id_from_url("https://www.finn.no/mobility/item/474152630") == "474152630"
     assert parsers.finn_id_from_url("https://www.finn.no/other/path") is None
+
+
+def test_parse_ad_detail_extracts_wltp_range_for_electric_car():
+    # Rekkevidde-feltet har en skjult forklaringstekst limt rett inn i <dt>-teksten
+    # uten mellomrom ("Rekkevidde (WLTP)WLTP er et måltall...") -- må matches på prefiks.
+    html = _read("ad_page_ev_sample.html")
+    detail = parsers.parse_ad_detail(html)
+
+    assert detail["drivstoff"] == "El"
+    assert detail["rekkevidde_wltp"] == 468
+
+
+def test_parse_ad_detail_range_is_none_when_field_absent():
+    # Denne annonsen (en varebil) har ikke Rekkevidde i nøkkelinfo-listen sin.
+    html = _read("ad_page_sample.html")
+    detail = parsers.parse_ad_detail(html)
+
+    assert detail["rekkevidde_wltp"] is None

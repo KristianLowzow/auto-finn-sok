@@ -30,17 +30,31 @@ def _send(subject, body):
     return True
 
 
-def send_good_deal_alert(listing, score_result):
-    subject = f"Godt kjøp funnet: {listing.merke} {listing.modell} - {listing.pris} kr"
-    body = (
-        f"{listing.merke} {listing.modell} ({listing.variant})\n"
-        f"Årsmodell: {listing.aarsmodell}\n"
-        f"Kilometerstand: {listing.kilometerstand} km\n"
-        f"Pris: {listing.pris} kr\n"
-        f"Deal-score: {score_result.score}/100 ({score_result.label}, "
-        f"basert på {score_result.cohort_size} sammenlignbare biler, metode: {score_result.method})\n\n"
-        f"{listing.url}"
-    )
+def send_daily_digest(candidates):
+    """Sender ÉN samlet e-post med alle fremragende kjøp funnet i denne
+    kjøringen, i stedet for én e-post per bil. candidates: liste av
+    (listing, score_result, km_percentile, range_percentile)."""
+    if not candidates:
+        return False
+
+    count = len(candidates)
+    subject = f"{count} fremragende kjøp funnet" if count > 1 else "1 fremragende kjøp funnet"
+
+    sections = []
+    for listing, score_result, km_percentile, range_percentile in candidates:
+        lines = [
+            f"{listing.merke} {listing.modell} ({listing.variant})",
+            f"Årsmodell: {listing.aarsmodell}   Kilometerstand: {listing.kilometerstand} km   Pris: {listing.pris} kr",
+            f"Pris-persentil: {score_result.score}/100   Km-persentil: {round(km_percentile, 1) if km_percentile is not None else '-'}/100",
+        ]
+        if range_percentile is not None:
+            lines.append(f"Rekkevidde (WLTP): {listing.rekkevidde_wltp} km   Rekkevidde-persentil: {round(range_percentile, 1)}/100")
+        lines.append(listing.url)
+        sections.append("\n".join(lines))
+
+    body = f"{count} annonse(r) skiller seg tydelig positivt ut på pris, kilometerstand" \
+           f"{' og rekkevidde (for elbiler)' if any(c[3] is not None for c in candidates) else ''}" \
+           f" sammenlignet med lignende biler:\n\n" + "\n\n".join(sections)
     return _send(subject, body)
 
 
