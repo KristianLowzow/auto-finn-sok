@@ -130,3 +130,63 @@ def evaluate_deal(listing, cohort_df, min_cohort, exceptional_terskel):
     if range_percentile is None or range_percentile < exceptional_terskel:
         return False, km_percentile, range_percentile
     return True, km_percentile, range_percentile
+
+
+def compute_brand_regression_deviation(listing, brand_cohort_df, min_cohort, min_rekkevidde):
+    """Predikerer pris fra årsmodell + kilometerstand + rekkevidde, på tvers
+    av ALLE modeller for samme MERKE (ikke bare samme modell). Fordi
+    rekkevidde er med som forklaringsvariabel, er det rimelig å slå sammen
+    f.eks. "ID.4" og "ID.4 GTX" i samme regresjon -- den dyrere GTX-varianten
+    forklares av at den har mer rekkevidde/kraft, ikke bare av at den er en
+    annen modell.
+
+    Kun elbiler med rekkevidde over `min_rekkevidde` regnes med, både som
+    kandidat og i sammenligningsgrunnlaget, slik at korte og lange rekkevidder
+    ikke sammenlignes rått mot hverandre.
+
+    Returnerer (avvik_prosent, kohort_størrelse). avvik_prosent er hvor mange
+    prosent annonsens pris ligger UNDER (negativt) eller OVER (positivt)
+    "merke-linja" -- godt kjøp er et stort negativt tall. None hvis bilen
+    ikke er elektrisk, mangler rekkevidde, er under grensen, eller det ikke
+    er nok sammenlignbare biler.
+    """
+    if not is_electric(listing.drivstoff) or listing.rekkevidde_wltp is None or listing.rekkevidde_wltp <= min_rekkevidde:
+        return None, 0
+    if listing.pris is None or listing.aarsmodell is None or listing.kilometerstand is None:
+        return None, 0
+
+    eligible = brand_cohort_df[brand_cohort_df["finn_id"] != listing.finn_id]
+    if "rekkevidde_wltp" not in eligible.columns:
+        return None, 0
+    eligible = eligible.dropna(subset=["pris", "aarsmodell", "kilometerstand", "rekkevidde_wltp"])
+    eligible = eligible[eligible["rekkevidde_wltp"] > min_rekkevidde]
+
+    n = len(eligible)
+    if n < min_cohort:
+        return None, n
+
+    x = np.column_stack(
+        [
+            np.ones(n),
+            eligible["aarsmodell"].to_numpy(dtype=float),
+            eligible["kilometerstand"].to_numpy(dtype=float),
+            eligible["rekkevidde_wltp"].to_numpy(dtype=float),
+        ]
+    )
+    y = eligible["pris"].to_numpy(dtype=float)
+    try:
+        coeffs, *_ = np.linalg.lstsq(x, y, rcond=None)
+    except np.linalg.LinAlgError:
+        return None, n
+
+    predicted = (
+        coeffs[0]
+        + coeffs[1] * listing.aarsmodell
+        + coeffs[2] * listing.kilometerstand
+        + coeffs[3] * listing.rekkevidde_wltp
+    )
+    if predicted <= 0:
+        return None, n
+
+    deviation_pct = 100.0 * (listing.pris - predicted) / predicted
+    return round(deviation_pct, 1), n

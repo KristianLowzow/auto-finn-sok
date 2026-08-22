@@ -39,6 +39,7 @@ _INNSTILLINGER_DEFAULTS = [
     ["RegresjonKohort", str(config.DEFAULT_REGRESJON_COHORT), "Minimum sammenligningsbiler før vi bruker regresjon i stedet for persentil"],
     ["LookbackDager", str(config.DEFAULT_LOOKBACK_DAYS), "Hvor mange dager bakover som telles med i sammenligningsgrunnlaget"],
     ["StandardMaksPrisVarsel", str(config.DEFAULT_MAKS_PRIS_VARSEL), "Brukes når en Merker-rad ikke har egen 'Maks pris (varsel)'"],
+    ["MinRekkevidde", str(config.DEFAULT_MIN_REKKEVIDDE), "Kun elbiler med rekkevidde (WLTP) over dette telles med i merke-regresjonen"],
 ]
 _ENKELTSJEKK_HEADER = ["Tidspunkt", "URL"] + Listing.columns()
 
@@ -157,6 +158,7 @@ def read_settings_overrides(spreadsheet):
         "RegresjonKohort": config.DEFAULT_REGRESJON_COHORT,
         "LookbackDager": config.DEFAULT_LOOKBACK_DAYS,
         "StandardMaksPrisVarsel": config.DEFAULT_MAKS_PRIS_VARSEL,
+        "MinRekkevidde": config.DEFAULT_MIN_REKKEVIDDE,
     }
     if not _has_tab(spreadsheet, config.TAB_INNSTILLINGER):
         return defaults
@@ -177,7 +179,7 @@ def _worksheet_to_df(worksheet, columns):
         return pd.DataFrame(columns=columns)
     header, rows = values[0], values[1:]
     df = pd.DataFrame(rows, columns=header)
-    for col in ("pris", "kilometerstand", "rekkevidde_wltp", "aarsmodell", "deal_score"):
+    for col in ("pris", "kilometerstand", "rekkevidde_wltp", "aarsmodell", "deal_score", "regresjon_avvik_pct"):
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
     return df
@@ -245,6 +247,7 @@ def apply_conditional_formatting(spreadsheet):
     num_cols = len(columns)
     label_letter = _col_letter(columns.index("deal_label"))
     fremragende_letter = _col_letter(columns.index("fremragende_kjop"))
+    avvik_col_index = columns.index("regresjon_avvik_pct")
 
     metadata = spreadsheet.fetch_sheet_metadata()
     existing_rule_count = 0
@@ -284,12 +287,41 @@ def apply_conditional_formatting(spreadsheet):
             }
         }
 
-    # Lagt til i omvendt prioritetsrekkefølge (index 0 settes sist -> høyest prioritet)
+    def cell_rule(range_, condition_type, value, background, bold=False):
+        fmt = {"backgroundColor": background}
+        if bold:
+            fmt["textFormat"] = {"bold": True}
+        return {
+            "addConditionalFormatRule": {
+                "rule": {
+                    "ranges": [range_],
+                    "booleanRule": {
+                        "condition": {"type": condition_type, "values": [{"userEnteredValue": str(value)}]},
+                        "format": fmt,
+                    },
+                },
+                "index": 0,
+            }
+        }
+
+    avvik_range = {
+        "sheetId": sheet_id,
+        "startRowIndex": 1,
+        "endRowIndex": 20000,
+        "startColumnIndex": avvik_col_index,
+        "endColumnIndex": avvik_col_index + 1,
+    }
+
+    # Lagt til i omvendt prioritetsrekkefølge (index 0 settes sist -> høyest prioritet).
+    # Regresjonsavvik-kolonnen fargelegges til slutt slik at den vinner over
+    # radfargen i akkurat den kolonnen, uten å påvirke resten av raden.
     add_requests = [
         rule(f'=${label_letter}2="Dyrt"', {"red": 0.98, "green": 0.85, "blue": 0.85}),
         rule(f'=${label_letter}2="Gjennomsnittlig"', {"red": 1.0, "green": 0.97, "blue": 0.80}),
         rule(f'=${label_letter}2="Godt kjøp"', {"red": 0.85, "green": 0.94, "blue": 0.83}),
         rule(f'=${fremragende_letter}2=TRUE', {"red": 1.0, "green": 0.90, "blue": 0.60}, bold=True),
+        cell_rule(avvik_range, "NUMBER_GREATER_THAN_EQ", 15, {"red": 0.94, "green": 0.70, "blue": 0.70}, bold=True),
+        cell_rule(avvik_range, "NUMBER_LESS_THAN_EQ", -15, {"red": 0.70, "green": 0.88, "blue": 0.70}, bold=True),
     ]
     spreadsheet.batch_update({"requests": add_requests})
 
@@ -313,20 +345,105 @@ def append_enkeltsjekk(spreadsheet, row):
 
 def write_stats_tables(spreadsheet, tables):
     """tables: dict[navn -> DataFrame]. Skriver hver tabell under en overskrift,
-    stablet vertikalt i Statistikk-fanen, med to tomme rader mellom hver."""
+    stablet vertikalt i Statistikk-fanen, med to tomme rader mellom hver.
+
+    Returnerer et layout-dict {navn: {"columns", "data_start_row", "data_end_row"}}
+    (0-indekserte radnumre) slik at f.eks. apply_price_vs_km_charts vet nøyaktig
+    hvor hver tabells data endte opp, uten å anta faste rader for hånd."""
     worksheet = spreadsheet.worksheet(config.TAB_STATISTIKK)
     worksheet.clear()
 
     all_rows = []
+    layout = {}
     for title, df in tables.items():
         all_rows.append([title])
         if df.empty:
             all_rows.append(["(ingen data ennå)"])
+            layout[title] = {"columns": [], "data_start_row": None, "data_end_row": None}
         else:
             all_rows.append(list(df.columns))
+            data_start_row = len(all_rows)  # 0-indeksert, rett under kolonneoverskriftene
             all_rows.extend(df.astype(object).where(pd.notna(df), "").values.tolist())
+            layout[title] = {
+                "columns": list(df.columns),
+                "data_start_row": data_start_row,
+                "data_end_row": data_start_row + len(df) - 1,
+            }
         all_rows.append([])
         all_rows.append([])
 
     if all_rows:
         worksheet.update(all_rows, "A1")
+    return layout
+
+
+def apply_price_vs_km_charts(spreadsheet, layout, table_prefix="Pris vs. km — "):
+    """Lager ett punktdiagram (pris mot kilometerstand) per bilmerke, ut fra
+    tabellene write_stats_tables la i layout-dict-en. Fjerner og lager alle
+    diagrammene på nytt hver kjøring for å holde dem i takt med dataene."""
+    worksheet = spreadsheet.worksheet(config.TAB_STATISTIKK)
+    sheet_id = worksheet.id
+
+    metadata = spreadsheet.fetch_sheet_metadata()
+    existing_chart_ids = []
+    for sheet in metadata.get("sheets", []):
+        if sheet["properties"]["sheetId"] == sheet_id:
+            existing_chart_ids = [chart["chartId"] for chart in sheet.get("charts", [])]
+            break
+    delete_requests = [{"deleteEmbeddedObject": {"objectId": chart_id}} for chart_id in existing_chart_ids]
+    if delete_requests:
+        spreadsheet.batch_update({"requests": delete_requests})
+
+    add_requests = []
+    chart_index = 0
+    for title, info in layout.items():
+        if not title.startswith(table_prefix) or info["data_start_row"] is None:
+            continue
+        brand = title[len(table_prefix):]
+        columns = info["columns"]
+        km_col = columns.index("Kilometerstand")
+        pris_col = columns.index("Pris")
+
+        def col_range(col_index):
+            return {
+                "sheetId": sheet_id,
+                "startRowIndex": info["data_start_row"],
+                "endRowIndex": info["data_end_row"] + 1,
+                "startColumnIndex": col_index,
+                "endColumnIndex": col_index + 1,
+            }
+
+        add_requests.append(
+            {
+                "addChart": {
+                    "chart": {
+                        "spec": {
+                            "title": f"Pris vs. kilometerstand — {brand}",
+                            "basicChart": {
+                                "chartType": "SCATTER",
+                                "legendPosition": "NO_LEGEND",
+                                "axis": [
+                                    {"position": "BOTTOM_AXIS", "title": "Kilometerstand"},
+                                    {"position": "LEFT_AXIS", "title": "Pris"},
+                                ],
+                                "domains": [{"domain": {"sourceRange": {"sources": [col_range(km_col)]}}}],
+                                "series": [
+                                    {"series": {"sourceRange": {"sources": [col_range(pris_col)]}}, "targetAxis": "LEFT_AXIS"}
+                                ],
+                            },
+                        },
+                        "position": {
+                            "overlayPosition": {
+                                "anchorCell": {"sheetId": sheet_id, "rowIndex": chart_index * 22, "columnIndex": 12},
+                                "widthPixels": 600,
+                                "heightPixels": 371,
+                            }
+                        },
+                    }
+                }
+            }
+        )
+        chart_index += 1
+
+    if add_requests:
+        spreadsheet.batch_update({"requests": add_requests})

@@ -21,7 +21,7 @@ def _now_iso():
 
 def _listings_to_df(listings):
     df = pd.DataFrame([l.to_row() for l in listings], columns=Listing.columns())
-    for col in ("pris", "kilometerstand", "rekkevidde_wltp", "aarsmodell", "deal_score"):
+    for col in ("pris", "kilometerstand", "rekkevidde_wltp", "aarsmodell", "deal_score", "regresjon_avvik_pct"):
         df[col] = pd.to_numeric(df[col], errors="coerce")
     return df
 
@@ -130,6 +130,13 @@ def _score_all(all_listings, history_df, overrides, now_iso):
             listing, cohort, overrides["MinKohort"], overrides["GodtKjopTerskel"]
         )
         listing.fremragende_kjop = is_exceptional
+
+        brand_cohort = combined[combined["merke"] == listing.merke]
+        deviation_pct, _brand_cohort_size = scoring.compute_brand_regression_deviation(
+            listing, brand_cohort, overrides["MinKohort"], overrides["MinRekkevidde"]
+        )
+        listing.regresjon_avvik_pct = deviation_pct
+
         scored.append((listing, result, km_percentile, range_percentile))
     return scored
 
@@ -191,15 +198,18 @@ def run():
         sheets_client.write_active_listings(spreadsheet, all_listings)
         sheets_client.apply_conditional_formatting(spreadsheet)
 
-        updated_active_df = pd.DataFrame([l.to_row() for l in all_listings], columns=Listing.columns())
+        updated_active_df = _listings_to_df(all_listings)
         stat_tables = {
             "Prisutvikling per uke": stats.build_price_trend(active_df, history_df),
             "Prisutvikling per årsmodell": stats.build_price_by_year(updated_active_df, history_df),
-            "Pris vs. kilometerstand (aktive)": stats.build_price_vs_km(updated_active_df),
             "Nye/fjernet per uke": stats.build_new_removed_counts(active_df, history_df),
             "Fordeling av vurdering": stats.build_score_distribution(updated_active_df),
         }
-        sheets_client.write_stats_tables(spreadsheet, stat_tables)
+        for brand, brand_df in stats.build_price_vs_km_by_brand(updated_active_df).items():
+            stat_tables[f"Pris vs. km — {brand}"] = brand_df
+
+        layout = sheets_client.write_stats_tables(spreadsheet, stat_tables)
+        sheets_client.apply_price_vs_km_charts(spreadsheet, layout)
 
     except BlockedError as exc:
         logger.error("Avbryter kjøringen -- blokkert av Finn.no: %s", exc)

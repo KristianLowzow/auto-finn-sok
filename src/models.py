@@ -27,6 +27,7 @@ class Listing:
     deal_score: float = None
     deal_label: str = ""
     fremragende_kjop: bool = False  # skiller seg positivt ut på pris, km OG (for elbil) rekkevidde
+    regresjon_avvik_pct: float = None  # % under(-)/over(+) merkets pris-regresjonslinje (år+km+rekkevidde)
     varslet: bool = False
 
     @staticmethod

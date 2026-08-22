@@ -54,16 +54,14 @@ i Kjørelogg-fanen.
 8. **Fyll ut Merker-fanen**: legg inn minst én rad med Merke + Modell og
    kryss av Aktiv=TRUE. Kjør workflowen manuelt igjen for å bekrefte at den
    plukker opp innstillingen.
-9. **Lag graf-objektene i Statistikk-fanen**: dataene skrives automatisk til
-   faste tabeller der -- sett opp ett diagram i Sheets manuelt én gang per
-   tabell, så oppdateres grafen automatisk etter hvert som tabellen fylles på
-   nytt hver kjøring:
-   - **Prisutvikling per årsmodell** (X=Årsmodell, Y=Snittpris, én serie per
-     Merke+Modell) -- depresieringskurve, "kurver for hver modell pr år".
-   - **Pris vs. kilometerstand (aktive)** (X=Kilometerstand, Y=Pris) -- filtrer
-     på Merke/Modell for én modell om gangen, og fargelegg punktene etter
-     Vurdering-kolonnen for å se gode/dårlige kjøp visuelt.
-   - Prisutvikling per uke, Nye/fjernet per uke, Fordeling av vurdering.
+9. **Statistikk-fanen**: dataene skrives automatisk til faste tabeller der.
+   Ett **punktdiagram per bilmerke** (pris mot kilometerstand) opprettes og
+   oppdateres helt automatisk hver kjøring -- ingenting å sette opp manuelt.
+   For de andre tabellene (Prisutvikling per uke/årsmodell, Nye/fjernet per
+   uke, Fordeling av vurdering) må du sette opp ett diagram i Sheets manuelt
+   én gang per tabell; grafen oppdateres automatisk etter hvert som tabellen
+   fylles på nytt hver kjøring. Depresieringskurve: X=Årsmodell, Y=Snittpris,
+   én serie per Merke+Modell.
 
    I tillegg fargelegges radene i **Aktive Annonser** automatisk hver kjøring:
    grønt = Godt kjøp, gult = Gjennomsnittlig, rødt = Dyrt, og gull/fet skrift
@@ -104,6 +102,24 @@ Alle Fremragende-treff i én kjøring samles i **én** e-postrapport (ikke én
 e-post per bil), med pris/km/rekkevidde-persentilene så du ser hvorfor bilen
 ble plukket ut.
 
+## Merke-regresjon ("Regresjonsavvik %")
+
+I tillegg til Deal Label (som sammenligner mot samme MODELL) regnes det ut en
+egen **regresjonslinje per bilMERKE**: pris forklares med årsmodell,
+kilometerstand OG rekkevidde samtidig, på tvers av alle modellene til merket
+(f.eks. slås "ID.4" og "ID.4 GTX" sammen -- fordi rekkevidde er med som
+forklaringsvariabel, forklares GTX-ens høyere pris av at den har mer
+rekkevidde/kraft, ikke bare av at det er "en annen modell"). Bare elbiler med
+rekkevidde over `MinRekkevidde` (standard 400 km) regnes med, slik at korte
+og lange rekkevidder ikke sammenlignes rått mot hverandre.
+
+Kolonnen **"Regresjonsavvik %"** i Aktive Annonser viser hvor mange prosent
+annonsens pris ligger under (negativt) eller over (positivt) denne
+merke-linja. Langt under linja = godt kjøp. Celler under -15 % fargelegges
+grønt, over +15 % rødt. Denne vurderingen er uavhengig av og påvirker
+foreløpig ikke Deal Label/Fremragende/e-postvarsling -- si fra hvis du vil at
+den skal styre varslingen i stedet.
+
 **Maks pris (varsel)** i Merker-fanen er en egen prisgrense *kun* for om noe
 er verdt et varsel -- den påvirker ikke hva som hentes/vises i statistikken.
 Alt innenfor merke+modell hentes og telles med i Aktive Annonser og
@@ -124,6 +140,8 @@ Innstillinger-fanen i arket lar deg justere:
   sammenligningsgrunnlaget (standard 90)
 - `StandardMaksPrisVarsel` -- brukes når en Merker-rad ikke har egen "Maks
   pris (varsel)" (standard 230 000)
+- `MinRekkevidde` -- kun elbiler med rekkevidde (WLTP) over dette telles med
+  i merke-regresjonen (standard 400 km)
 
 ## Lokal testing før du setter opp cronen
 
@@ -158,9 +176,9 @@ over.
 | Fane | Innhold |
 |---|---|
 | Merker | Du redigerer: hvilke merker/modeller som følges, årsfilter, km-filter og "Maks pris (varsel)" |
-| Aktive Annonser | Script skriver: alle annonser som er live nå, med Deal Label og Fremragende-markering (fargelagt) |
+| Aktive Annonser | Script skriver: alle annonser som er live nå, med Deal Label, Fremragende og Regresjonsavvik % (fargelagt) |
 | Historikk | Script skriver: annonser som har forsvunnet (antatt solgt) |
-| Statistikk | Script skriver: tabeller grafene dine peker på |
+| Statistikk | Script skriver: tabeller + ett auto-generert pris/km-diagram per bilmerke |
 | Kjørelogg | Script skriver: én rad per kjøring, for feilsøking |
 | Innstillinger | Du redigerer: terskler for vurdering og varsling |
 | Sjekk enkeltannonse | Script skriver: resultat fra manuelle enkelt-sjekk |

@@ -4,7 +4,7 @@ from src.main import _score_all
 from src.models import Listing
 
 NOW = "2026-08-21T21:00:00+00:00"
-OVERRIDES = {"GodtKjopTerskel": 80, "MinKohort": 5, "RegresjonKohort": 15, "LookbackDager": 90}
+OVERRIDES = {"GodtKjopTerskel": 80, "MinKohort": 5, "RegresjonKohort": 15, "LookbackDager": 90, "MinRekkevidde": 400}
 
 
 def _electric_listing(finn_id, pris, km, rekkevidde):

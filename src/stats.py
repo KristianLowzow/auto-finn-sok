@@ -30,28 +30,30 @@ def build_price_trend(active_df, history_df):
     return grouped.sort_values(["Uke", "Merke", "Modell"])
 
 
-def build_price_vs_km(active_df):
-    """Ett punkt per aktiv annonse -- lag et punktdiagram (X=Kilometerstand,
-    Y=Pris) og fargelegg etter Vurdering-kolonnen for å se gode/dårlige kjøp
-    på tvers av km-nivå. Filtrer på Merke/Modell i selve arket for én modell
-    om gangen."""
-    cols = ["Merke", "Modell", "Kilometerstand", "Pris", "Vurdering", "Fremragende", "Rekkevidde (WLTP)"]
+def build_price_vs_km_by_brand(active_df):
+    """Én tabell per merke (Kilometerstand, Pris, Modell, Vurdering,
+    Regresjonsavvik %) -- grunnlag for ett punktdiagram per bilmerke.
+    Returnerer en dict {merke: DataFrame}, kun for merker med data."""
     if active_df.empty:
-        return pd.DataFrame(columns=cols)
-    subset = active_df.dropna(subset=["pris", "kilometerstand"])[
-        ["merke", "modell", "kilometerstand", "pris", "deal_label", "fremragende_kjop", "rekkevidde_wltp"]
-    ]
-    return subset.rename(
-        columns={
-            "merke": "Merke",
-            "modell": "Modell",
-            "kilometerstand": "Kilometerstand",
-            "pris": "Pris",
-            "deal_label": "Vurdering",
-            "fremragende_kjop": "Fremragende",
-            "rekkevidde_wltp": "Rekkevidde (WLTP)",
-        }
-    )
+        return {}
+    subset = active_df.dropna(subset=["pris", "kilometerstand"])
+    result = {}
+    for brand in sorted(subset["merke"].dropna().unique()):
+        brand_df = subset[subset["merke"] == brand][
+            ["kilometerstand", "pris", "modell", "deal_label", "regresjon_avvik_pct"]
+        ].sort_values("kilometerstand")
+        if brand_df.empty:
+            continue
+        result[brand] = brand_df.rename(
+            columns={
+                "kilometerstand": "Kilometerstand",
+                "pris": "Pris",
+                "modell": "Modell",
+                "deal_label": "Vurdering",
+                "regresjon_avvik_pct": "Regresjonsavvik %",
+            }
+        )
+    return result
 
 
 def build_price_by_year(active_df, history_df):

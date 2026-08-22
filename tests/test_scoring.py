@@ -1,7 +1,14 @@
 import pandas as pd
 
 from src.models import Listing
-from src.scoring import LABEL_DYRT, LABEL_GODT_KJOP, LABEL_IKKE_NOK_DATA, compute_score, evaluate_deal
+from src.scoring import (
+    LABEL_DYRT,
+    LABEL_GODT_KJOP,
+    LABEL_IKKE_NOK_DATA,
+    compute_brand_regression_deviation,
+    compute_score,
+    evaluate_deal,
+)
 
 
 def _cohort(prices, years=None, kms=None, ranges=None, start_id=1):
@@ -138,3 +145,72 @@ def test_evaluate_deal_too_few_comparables_is_never_exceptional():
     is_exceptional, km_pct, range_pct = evaluate_deal(listing, cohort, min_cohort=5, exceptional_terskel=80)
 
     assert is_exceptional is False
+
+
+def _brand_cohort(n=10, base_price=500000, price_per_km=-2.0, price_per_range_km=300.0):
+    # Lager en kohort med en kjent, eksakt lineær sammenheng mellom pris og
+    # år/km/rekkevidde, slik at vi vet nøyaktig hva regresjonen bør predikere.
+    years = [2021] * n
+    kms = [i * 5000 for i in range(n)]
+    ranges = [450 + i * 5 for i in range(n)]  # alle over 400
+    prices = [base_price + price_per_km * km + price_per_range_km * rng for km, rng in zip(kms, ranges)]
+    return pd.DataFrame(
+        {
+            "finn_id": [str(100 + i) for i in range(n)],
+            "merke": ["Skoda"] * n,
+            "pris": prices,
+            "aarsmodell": years,
+            "kilometerstand": kms,
+            "rekkevidde_wltp": ranges,
+        }
+    )
+
+
+def test_brand_regression_flags_car_priced_far_below_the_line():
+    cohort = _brand_cohort()
+    # Samme år/km/rekkevidde-nivå som midt i kohorten, men mye billigere
+    listing = Listing(finn_id="999", url="u", merke="Skoda", drivstoff="El", pris=300000, aarsmodell=2021, kilometerstand=25000, rekkevidde_wltp=475)
+
+    deviation_pct, n = compute_brand_regression_deviation(listing, cohort, min_cohort=5, min_rekkevidde=400)
+
+    assert n == 10
+    assert deviation_pct < -20  # godt under regresjonslinja
+
+
+def test_brand_regression_flags_car_priced_far_above_the_line():
+    cohort = _brand_cohort()
+    listing = Listing(finn_id="999", url="u", merke="Skoda", drivstoff="El", pris=900000, aarsmodell=2021, kilometerstand=25000, rekkevidde_wltp=475)
+
+    deviation_pct, n = compute_brand_regression_deviation(listing, cohort, min_cohort=5, min_rekkevidde=400)
+
+    assert deviation_pct > 20
+
+
+def test_brand_regression_excludes_cars_below_range_threshold():
+    cohort = _brand_cohort()
+    listing = Listing(finn_id="999", url="u", merke="Skoda", drivstoff="El", pris=300000, aarsmodell=2021, kilometerstand=25000, rekkevidde_wltp=350)
+
+    deviation_pct, n = compute_brand_regression_deviation(listing, cohort, min_cohort=5, min_rekkevidde=400)
+
+    assert deviation_pct is None
+
+
+def test_brand_regression_skips_non_electric_cars():
+    cohort = _brand_cohort()
+    listing = Listing(finn_id="999", url="u", merke="Skoda", drivstoff="Bensin", pris=300000, aarsmodell=2021, kilometerstand=25000, rekkevidde_wltp=475)
+
+    deviation_pct, n = compute_brand_regression_deviation(listing, cohort, min_cohort=5, min_rekkevidde=400)
+
+    assert deviation_pct is None
+
+
+def test_brand_regression_pools_across_models_within_the_brand():
+    # To "modeller" av samme merke i samme kohort -- funksjonen bryr seg kun
+    # om merke, ikke modell, siden rekkevidde skal forklare prisforskjellen.
+    cohort = _brand_cohort()
+    cohort["modell"] = ["Enyaq"] * 5 + ["Enyaq Coupe"] * 5
+    listing = Listing(finn_id="999", url="u", merke="Skoda", modell="Enyaq Coupe", drivstoff="El", pris=300000, aarsmodell=2021, kilometerstand=25000, rekkevidde_wltp=475)
+
+    deviation_pct, n = compute_brand_regression_deviation(listing, cohort, min_cohort=5, min_rekkevidde=400)
+
+    assert n == 10  # begge modellene telles med

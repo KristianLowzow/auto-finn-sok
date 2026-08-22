@@ -39,6 +39,7 @@ DEFAULT_REGRESJON_COHORT = 15
 DEFAULT_LOOKBACK_DAYS = 90
 DEFAULT_GRACE_PERIOD_RUNS = 2
 DEFAULT_MAKS_PRIS_VARSEL = 230000  # brukes når en Merker-rad ikke har egen "Maks pris (varsel)"
+DEFAULT_MIN_REKKEVIDDE = 400  # km -- kun elbiler over denne rekkevidden regnes med i merke-regresjonen
 
 # --- Skraping: unngå å belaste/bli blokkert av Finn.no ---
 REQUEST_TIMEOUT_S = 15
