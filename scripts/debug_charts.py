@@ -61,12 +61,60 @@ def main():
     for spec in chart_specs:
         print(f"  {spec}")
 
-    try:
-        sheets_client.apply_bubble_charts(spreadsheet, layout, chart_specs)
-        print("\napply_bubble_charts OK")
-    except Exception:
-        print("\napply_bubble_charts FEILET -- se traceback + request-dump under")
-        raise
+    # Bygg addChart-requestene manuelt (samme logikk som apply_bubble_charts)
+    # og send dem ETT ADT GANGEN, slik at vi ser nøyaktig hvilken spec som
+    # feiler og får hele rå feilteksten fra Google (ikke bare gspreads
+    # forkortede APIError-melding).
+    worksheet = spreadsheet.worksheet(sheets_client.config.TAB_STATISTIKK)
+    sheet_id = worksheet.id
+
+    def col_range(info, columns, col_name):
+        idx = columns.index(col_name)
+        return {
+            "sheetId": sheet_id,
+            "startRowIndex": info["data_start_row"],
+            "endRowIndex": info["data_end_row"] + 1,
+            "startColumnIndex": idx,
+            "endColumnIndex": idx + 1,
+        }
+
+    for i, spec in enumerate(chart_specs):
+        info = layout[spec["table_title"]]
+        columns = info["columns"]
+        bubble_chart = {
+            "domain": {"sourceRange": {"sources": [col_range(info, columns, "Kilometerstand")]}},
+            "series": {"sourceRange": {"sources": [col_range(info, columns, "Pris")]}},
+            "legendPosition": "RIGHT_LEGEND",
+        }
+        if spec.get("group_col"):
+            bubble_chart["groupIds"] = {"sourceRange": {"sources": [col_range(info, columns, spec["group_col"])]}}
+        if spec.get("size_col"):
+            bubble_chart["bubbleSizes"] = {"sourceRange": {"sources": [col_range(info, columns, spec["size_col"])]}}
+
+        request = {
+            "addChart": {
+                "chart": {
+                    "spec": {"title": spec["chart_title"], "bubbleChart": bubble_chart},
+                    "position": {
+                        "overlayPosition": {
+                            "anchorCell": {"sheetId": sheet_id, "rowIndex": i * 22, "columnIndex": 12},
+                            "widthPixels": 600,
+                            "heightPixels": 371,
+                        }
+                    },
+                }
+            }
+        }
+        print(f"\n--- Spec {i}: {spec['table_title']!r} ---")
+        print(json.dumps(request, ensure_ascii=False))
+        try:
+            spreadsheet.batch_update({"requests": [request]})
+            print("OK")
+        except Exception as exc:
+            print(f"FEILET: {exc}")
+            response = getattr(exc, "response", None)
+            if response is not None:
+                print(f"RAW RESPONSE BODY: {response.text}")
 
 
 if __name__ == "__main__":
