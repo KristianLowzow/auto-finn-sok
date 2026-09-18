@@ -1,0 +1,50 @@
+name: Dump utvalg fra arket (engangs)
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - run: pip install -r requirements.txt
+
+      - name: Dump Kjørelogg + utvalg fra Aktive Annonser
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          SHEET_ID: ${{ secrets.SHEET_ID }}
+        run: |
+          python -c "
+          from src import sheets_client, config
+
+          s = sheets_client.open_sheet()
+
+          print('=== Kjørelogg (siste 5 rader) ===')
+          kjorelogg = s.worksheet(config.TAB_KJORELOGG)
+          rows = kjorelogg.get_all_values()
+          header = rows[0]
+          print(header)
+          for row in rows[-5:]:
+              print(row)
+
+          print()
+          print('=== Aktive Annonser: header ===')
+          aktive = s.worksheet(config.TAB_AKTIVE)
+          values = aktive.get_all_values()
+          print('Antall datarader:', len(values) - 1)
+          print(values[0])
+          print()
+          print('=== Aktive Annonser: 3 tilfeldige datarader ===')
+          import random
+          sample = random.sample(values[1:], min(3, len(values) - 1))
+          for row in sample:
+              print(row)
+          "
