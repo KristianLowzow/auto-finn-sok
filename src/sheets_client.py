@@ -8,7 +8,7 @@ import gspread
 import pandas as pd
 from google.oauth2.service_account import Credentials
 
-from src import config
+from src import config, stats
 from src.models import Listing
 
 logger = logging.getLogger(__name__)
@@ -379,18 +379,24 @@ def write_stats_tables(spreadsheet, tables):
     return layout
 
 
-def apply_bubble_charts(spreadsheet, layout, chart_specs):
-    """Lager ett boblediagram (pris mot kilometerstand) per spec, ut fra
-    tabellene write_stats_tables la i layout-dict-en. Fjerner og lager alle
-    diagrammene på nytt hver kjøring for å holde dem i takt med dataene.
+def apply_grouped_scatter_charts(spreadsheet, layout, chart_specs):
+    """Lager ett fargekodet scatter-diagram (pris mot kilometerstand) per
+    spec, ut fra tabellene write_stats_tables la i layout-dict-en. Fjerner og
+    lager alle diagrammene på nytt hver kjøring for å holde dem i takt med
+    dataene.
+
+    Fargekodingen kommer fra at kildetabellen har PRIS PIVOTERT til én
+    kolonne per kategori (se stats.SERIES_COLUMN_PREFIX = "Pris (") -- hver
+    slik kolonne blir sin egen serie, og Sheets fargelegger automatisk hver
+    serie ulikt (samme triks som brukes for depresieringskurven). Vi bruker
+    IKKE Sheets sin bubbleChart-type: den avviste konsekvent selv en minimal,
+    schema-korrekt forespørsel med "ChartData.sourceRange must be set" i
+    praktisk testing (2026-09-18), mens identiske sourceRange-er fungerte
+    fint med basicChart -- så inntil Google fikser det bruker vi basicChart.
 
     chart_specs: liste av dict med nøklene:
       table_title  -- navnet på tabellen i layout (fra write_stats_tables)
       chart_title  -- tittelen som vises over diagrammet
-      group_col    -- kolonnenavn brukt til å fargelegge punkter i grupper
-                      (f.eks. "Merke" eller "Batteristørrelse"), eller None
-      size_col     -- kolonnenavn brukt til boblestørrelse (f.eks.
-                      "Batteri kWh"), eller None for ensartet størrelse
     """
     worksheet = spreadsheet.worksheet(config.TAB_STATISTIKK)
     sheet_id = worksheet.id
@@ -412,7 +418,8 @@ def apply_bubble_charts(spreadsheet, layout, chart_specs):
         if info is None or info["data_start_row"] is None:
             continue
         columns = info["columns"]
-        if "Kilometerstand" not in columns or "Pris" not in columns:
+        series_cols = [c for c in columns if c.startswith(stats.SERIES_COLUMN_PREFIX)]
+        if "Kilometerstand" not in columns or not series_cols:
             continue
 
         def col_range(col_name, info=info):
@@ -424,25 +431,25 @@ def apply_bubble_charts(spreadsheet, layout, chart_specs):
                 "endColumnIndex": columns.index(col_name) + 1,
             }
 
-        bubble_chart = {
-            "domain": {"sourceRange": {"sources": [col_range("Kilometerstand")]}},
-            "series": {"sourceRange": {"sources": [col_range("Pris")]}},
-            "legendPosition": "RIGHT_LEGEND" if spec.get("group_col") else "NO_LEGEND",
-        }
-        group_col = spec.get("group_col")
-        if group_col and group_col in columns:
-            bubble_chart["groupIds"] = {"sourceRange": {"sources": [col_range(group_col)]}}
-        size_col = spec.get("size_col")
-        if size_col and size_col in columns:
-            bubble_chart["bubbleSizes"] = {"sourceRange": {"sources": [col_range(size_col)]}}
-
         add_requests.append(
             {
                 "addChart": {
                     "chart": {
                         "spec": {
                             "title": spec["chart_title"],
-                            "bubbleChart": bubble_chart,
+                            "basicChart": {
+                                "chartType": "SCATTER",
+                                "legendPosition": "RIGHT_LEGEND" if len(series_cols) > 1 else "NO_LEGEND",
+                                "axis": [
+                                    {"position": "BOTTOM_AXIS", "title": "Kilometerstand"},
+                                    {"position": "LEFT_AXIS", "title": "Pris"},
+                                ],
+                                "domains": [{"domain": {"sourceRange": {"sources": [col_range("Kilometerstand")]}}}],
+                                "series": [
+                                    {"series": {"sourceRange": {"sources": [col_range(c)]}}, "targetAxis": "LEFT_AXIS"}
+                                    for c in series_cols
+                                ],
+                            },
                         },
                         "position": {
                             "overlayPosition": {

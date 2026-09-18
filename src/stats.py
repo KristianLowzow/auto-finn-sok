@@ -38,40 +38,55 @@ def build_price_trend(active_df, history_df):
     return grouped.sort_values(["Uke", "Merke", "Modell"])
 
 
+# Google Sheets sin bubbleChart-type (som ville gitt farge=kategori OG
+# størrelse=batteri-kWh i ett og samme diagram) viste seg å avvises av Sheets
+# API-en ("ChartData.sourceRange must be set") uansett hvor minimal
+# forespørselen var -- ser ut som en kjent svakhet i APIet, ikke en feil i
+# forespørselen vår (bekreftet ved at identiske sourceRange-er fungerer fint
+# med basicChart). Løsningen under bruker i stedet det ekte, veldokumenterte
+# trikset for fargekodede scatter-plott med rene Sheets-diagram: Pris pivotert
+# til én kolonne PER kategori (delt Kilometerstand-akse) -- Sheets fargelegger
+# automatisk hver kolonne som egen serie. Kolonner som starter med "Pris ("
+# plukkes opp som egne serier av sheets_client.apply_grouped_scatter_charts.
+SERIES_COLUMN_PREFIX = "Pris ("
+
+
 def build_price_vs_km_by_brand(active_df):
-    """Én tabell per merke (Kilometerstand, Pris, Modell, Vurdering,
-    Regresjonsavvik %, Batteristørrelse) -- grunnlag for ett boblediagram per
-    bilmerke, fargekodet på batteristørrelse. Returnerer en dict
-    {merke: DataFrame}, kun for merker med data."""
+    """Én tabell per merke -- Kilometerstand, Modell, Vurdering,
+    Regresjonsavvik %, Batteristørrelse, og én "Pris (<batteristørrelse>)"-
+    kolonne per batteristørrelse i merket (grunnlag for et fargekodet
+    scatter-diagram per bilmerke). Returnerer en dict {merke: DataFrame}, kun
+    for merker med data."""
     if active_df.empty:
         return {}
     subset = active_df.dropna(subset=["pris", "kilometerstand"]).copy()
     subset["Batteristørrelse"] = subset["batteri_kapasitet_kwh"].apply(_battery_bucket)
     result = {}
     for brand in sorted(subset["merke"].dropna().unique()):
-        brand_df = subset[subset["merke"] == brand][
-            ["kilometerstand", "pris", "modell", "deal_label", "regresjon_avvik_pct", "Batteristørrelse"]
-        ].sort_values("kilometerstand")
+        brand_df = subset[subset["merke"] == brand].sort_values("kilometerstand")
         if brand_df.empty:
             continue
-        result[brand] = brand_df.rename(
+        table = brand_df[["kilometerstand", "modell", "deal_label", "regresjon_avvik_pct", "Batteristørrelse"]].rename(
             columns={
                 "kilometerstand": "Kilometerstand",
-                "pris": "Pris",
                 "modell": "Modell",
                 "deal_label": "Vurdering",
                 "regresjon_avvik_pct": "Regresjonsavvik %",
             }
         )
+        for bucket in sorted(brand_df["Batteristørrelse"].unique()):
+            table[f"{SERIES_COLUMN_PREFIX}{bucket})"] = brand_df["pris"].where(brand_df["Batteristørrelse"] == bucket)
+        result[brand] = table
     return result
 
 
 def build_price_vs_km_by_drivetrain(active_df):
     """To tabeller ("4x4" og "2-hjulsdrift"), med ALLE merker/modeller samlet
-    -- grunnlag for to boblediagram (farge=Merke, boblestørrelse=batteri-kWh)
-    som lar deg sammenligne 4x4-biler mot hverandre og 2-hjulsdrevne biler
-    mot hverandre, uavhengig av merke. Returnerer dict {kategori: DataFrame},
-    kun for kategorier med data."""
+    -- Kilometerstand, Modell, Batteri kWh, og én "Pris (<merke>)"-kolonne per
+    merke (grunnlag for et fargekodet scatter-diagram som lar deg sammenligne
+    4x4-biler mot hverandre og 2-hjulsdrevne biler mot hverandre, uavhengig av
+    merke). Returnerer dict {kategori: DataFrame}, kun for kategorier med
+    data."""
     if active_df.empty:
         return {}
     subset = active_df.dropna(subset=["pris", "kilometerstand"]).copy()
@@ -79,20 +94,20 @@ def build_price_vs_km_by_drivetrain(active_df):
     subset = subset.dropna(subset=["Hjuldrift"])
     result = {}
     for category in ("4x4", "2-hjulsdrift"):
-        cat_df = subset[subset["Hjuldrift"] == category][
-            ["kilometerstand", "pris", "merke", "modell", "batteri_kapasitet_kwh"]
-        ].sort_values("kilometerstand")
+        cat_df = subset[subset["Hjuldrift"] == category].sort_values("kilometerstand")
         if cat_df.empty:
             continue
-        result[category] = cat_df.rename(
+        table = cat_df[["kilometerstand", "merke", "modell", "batteri_kapasitet_kwh"]].rename(
             columns={
                 "kilometerstand": "Kilometerstand",
-                "pris": "Pris",
                 "merke": "Merke",
                 "modell": "Modell",
                 "batteri_kapasitet_kwh": "Batteri kWh",
             }
         )
+        for brand in sorted(cat_df["merke"].dropna().unique()):
+            table[f"{SERIES_COLUMN_PREFIX}{brand})"] = cat_df["pris"].where(cat_df["merke"] == brand)
+        result[category] = table
     return result
 
 

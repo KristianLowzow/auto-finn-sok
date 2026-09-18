@@ -230,30 +230,19 @@ def run():
         for brand, brand_df in stats.build_price_vs_km_by_brand(updated_active_df).items():
             title = f"Pris vs. km — {brand}"
             stat_tables[title] = brand_df
-            chart_specs.append(
-                {
-                    "table_title": title,
-                    "chart_title": f"Pris vs. kilometerstand — {brand}",
-                    "group_col": "Batteristørrelse",
-                }
-            )
+            chart_specs.append({"table_title": title, "chart_title": f"Pris vs. kilometerstand — {brand} (farge=batteristørrelse)"})
 
         drivetrain_titles = {"4x4": "Pris vs. km — 4x4 (alle merker)", "2-hjulsdrift": "Pris vs. km — 2-hjulsdrift (alle merker)"}
         for category, drivetrain_df in stats.build_price_vs_km_by_drivetrain(updated_active_df).items():
             title = drivetrain_titles[category]
             stat_tables[title] = drivetrain_df
             chart_specs.append(
-                {
-                    "table_title": title,
-                    "chart_title": f"Pris vs. kilometerstand — {category} (alle merker, boblestørrelse=batteri-kWh)",
-                    "group_col": "Merke",
-                    "size_col": "Batteri kWh",
-                }
+                {"table_title": title, "chart_title": f"Pris vs. kilometerstand — {category} (alle merker, farge=merke)"}
             )
 
         try:
             layout = sheets_client.write_stats_tables(spreadsheet, stat_tables)
-            sheets_client.apply_bubble_charts(spreadsheet, layout, chart_specs)
+            sheets_client.apply_grouped_scatter_charts(spreadsheet, layout, chart_specs)
         except Exception as exc:
             # Statistikk/diagram er et tillegg -- en feil her skal ikke gjøre at
             # allerede skrevne Aktive Annonser/scoring regnes som en mislykket kjøring.

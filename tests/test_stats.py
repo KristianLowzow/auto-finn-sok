@@ -52,18 +52,25 @@ def test_build_price_vs_km_by_brand_pools_models_within_a_brand():
 def test_build_price_vs_km_by_brand_has_expected_columns():
     tables = build_price_vs_km_by_brand(_active_df())
 
+    # Pris pivoteres til én "Pris (<batteristørrelse>)"-kolonne per
+    # batteristørrelse i merket, slik at Sheets kan fargelegge hver som egen
+    # serie -- se stats.SERIES_COLUMN_PREFIX.
     assert list(tables["Skoda"].columns) == [
-        "Kilometerstand", "Pris", "Modell", "Vurdering", "Regresjonsavvik %", "Batteristørrelse",
+        "Kilometerstand", "Modell", "Vurdering", "Regresjonsavvik %", "Batteristørrelse",
+        "Pris (77 kWh)", "Pris (82 kWh)",
     ]
 
 
-def test_build_price_vs_km_by_brand_labels_battery_size_and_unknown():
+def test_build_price_vs_km_by_brand_pivots_price_into_one_column_per_battery_size():
     tables = build_price_vs_km_by_brand(_active_df())
 
-    skoda_sizes = set(tables["Skoda"]["Batteristørrelse"])
-    assert skoda_sizes == {"77 kWh", "82 kWh"}
-    vw_sizes = set(tables["Volkswagen"]["Batteristørrelse"])
-    assert "Ukjent" in vw_sizes  # ID.4 uten kjent batteristørrelse
+    skoda = tables["Skoda"]
+    row_77 = skoda[skoda["Batteristørrelse"] == "77 kWh"].iloc[0]
+    assert row_77["Pris (77 kWh)"] == 400000
+    assert pd.isna(row_77["Pris (82 kWh)"])
+
+    vw = tables["Volkswagen"]
+    assert "Pris (Ukjent)" in vw.columns  # ID.4 uten kjent batteristørrelse
 
 
 def test_build_price_vs_km_by_brand_empty_input():
@@ -89,7 +96,10 @@ def test_build_price_vs_km_by_drivetrain_splits_4x4_and_2wd_across_brands():
     assert set(tables.keys()) == {"4x4", "2-hjulsdrift"}
     assert set(tables["4x4"]["Merke"]) == {"Skoda", "Volkswagen"}
     assert set(tables["2-hjulsdrift"]["Merke"]) == {"Skoda", "Volkswagen"}
-    assert list(tables["4x4"].columns) == ["Kilometerstand", "Pris", "Merke", "Modell", "Batteri kWh"]
+    # Pris pivoteres til én "Pris (<merke>)"-kolonne per merke i kategorien
+    assert list(tables["4x4"].columns) == [
+        "Kilometerstand", "Merke", "Modell", "Batteri kWh", "Pris (Skoda)", "Pris (Volkswagen)",
+    ]
 
 
 def test_build_price_vs_km_by_drivetrain_empty_input():

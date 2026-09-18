@@ -55,14 +55,16 @@ i Kjørelogg-fanen.
    kryss av Aktiv=TRUE. Kjør workflowen manuelt igjen for å bekrefte at den
    plukker opp innstillingen.
 9. **Statistikk-fanen**: dataene skrives automatisk til faste tabeller der.
-   Følgende boblediagram opprettes og oppdateres helt automatisk hver kjøring
-   -- ingenting å sette opp manuelt:
-   - **Ett per bilmerke** (pris mot kilometerstand), fargekodet på
-     **batteristørrelse**.
+   Følgende scatter-diagram (pris mot kilometerstand) opprettes og
+   oppdateres helt automatisk hver kjøring -- ingenting å sette opp manuelt:
+   - **Ett per bilmerke**, fargekodet på **batteristørrelse**.
    - **To samlede diagram på tvers av alle merker/modeller**: ett for 4x4 og
-     ett for 2-hjulsdrift, fargekodet på **merke**, med boblestørrelse =
-     batterikapasitet (kWh) -- slik kan du sammenligne f.eks. Škoda Enyaq mot
-     VW ID.4 innenfor samme hjuldrift-type.
+     ett for 2-hjulsdrift, fargekodet på **merke** -- slik kan du sammenligne
+     f.eks. Škoda Enyaq mot VW ID.4 innenfor samme hjuldrift-type.
+     Batterikapasitet (kWh) vises som egen kolonne i tabellen bak diagrammet,
+     men er ikke en del av selve plottet (Google Sheets sin bobbel-diagramtype
+     avviste konsekvent gyldige forespørsler under utvikling, så vi bruker et
+     vanlig, pålitelig scatter-diagram i stedet).
 
    I tillegg finnes tabellen **"Škoda Enyaq vs. VW ID.4 (per hjuldrift)"**
    med snittpris/-km/-kr-per-gjenværende-km brutt ned på hjuldrift, som et
@@ -197,7 +199,7 @@ e-post er beskrevet over.
 | Merker | Du redigerer: hvilke merker/modeller som følges, årsfilter, km-filter og "Maks pris (varsel)" |
 | Aktive Annonser | Script skriver: alle annonser som er live nå, med Deal Label, Fremragende, Regresjonsavvik % (fargelagt), hjuldrift, batterikapasitet, utstyrspakke og utstyrsflagg (varmepumpe, head-up display, ratt-/setevarme, trådløs mobillading) |
 | Historikk | Script skriver: annonser som har forsvunnet (antatt solgt) |
-| Statistikk | Script skriver: tabeller + auto-genererte pris/km-boblediagram (per merke, og samlet per hjuldrift) + Enyaq/ID.4-sammenligning |
+| Statistikk | Script skriver: tabeller + auto-genererte pris/km-scatterdiagram (per merke, og samlet per hjuldrift) + Enyaq/ID.4-sammenligning |
 | Kjørelogg | Script skriver: én rad per kjøring, for feilsøking |
 | Innstillinger | Du redigerer: terskler for vurdering og varsling |
 | Sjekk enkeltannonse | Script skriver: resultat fra manuelle enkelt-sjekk |
