@@ -78,6 +78,65 @@ def main():
             "endColumnIndex": idx + 1,
         }
 
+    # Minimal-eksperiment: prøv tre stadig rikere varianter av EN request for å
+    # isolere om domain+series alene fungerer, og hvilket ekstra felt som
+    # eventuelt utløser "ChartData.sourceRange must be set".
+    skoda_info = layout["Pris vs. km — Skoda"]
+    skoda_cols = skoda_info["columns"]
+
+    def skoda_col_range(col_name):
+        idx = skoda_cols.index(col_name)
+        return {
+            "sheetId": sheet_id,
+            "startRowIndex": skoda_info["data_start_row"],
+            "endRowIndex": skoda_info["data_end_row"] + 1,
+            "startColumnIndex": idx,
+            "endColumnIndex": idx + 1,
+        }
+
+    variants = {
+        "domain+series": {
+            "domain": {"sourceRange": {"sources": [skoda_col_range("Kilometerstand")]}},
+            "series": {"sourceRange": {"sources": [skoda_col_range("Pris")]}},
+        },
+        "domain+series+legend": {
+            "domain": {"sourceRange": {"sources": [skoda_col_range("Kilometerstand")]}},
+            "series": {"sourceRange": {"sources": [skoda_col_range("Pris")]}},
+            "legendPosition": "RIGHT_LEGEND",
+        },
+        "domain+series+groupIds": {
+            "domain": {"sourceRange": {"sources": [skoda_col_range("Kilometerstand")]}},
+            "series": {"sourceRange": {"sources": [skoda_col_range("Pris")]}},
+            "groupIds": {"sourceRange": {"sources": [skoda_col_range("Batteristørrelse")]}},
+        },
+    }
+    for i, (name, bubble_chart_variant) in enumerate(variants.items()):
+        request = {
+            "addChart": {
+                "chart": {
+                    "spec": {"title": f"DEBUG {name}", "bubbleChart": bubble_chart_variant},
+                    "position": {
+                        "overlayPosition": {
+                            "anchorCell": {"sheetId": sheet_id, "rowIndex": 400 + i * 22, "columnIndex": 12},
+                            "widthPixels": 600,
+                            "heightPixels": 371,
+                        }
+                    },
+                }
+            }
+        }
+        print(f"\n=== Variant {name!r} ===")
+        print(json.dumps(request, ensure_ascii=False))
+        try:
+            spreadsheet.batch_update({"requests": [request]})
+            print("OK")
+        except Exception as exc:
+            print(f"FEILET: {exc}")
+            response = getattr(exc, "response", None)
+            if response is not None:
+                print(f"RAW RESPONSE BODY: {response.text}")
+
+    print("\n\n### Nå de fulle chart_specs ###")
     for i, spec in enumerate(chart_specs):
         info = layout[spec["table_title"]]
         columns = info["columns"]
