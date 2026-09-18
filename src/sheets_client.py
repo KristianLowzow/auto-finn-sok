@@ -34,9 +34,8 @@ _KJORELOGG_HEADER = [
 ]
 _INNSTILLINGER_DEFAULTS = [
     ["Nøkkel", "Verdi", "Forklaring"],
-    ["GodtKjopTerskel", str(config.DEFAULT_GODT_KJOP_TERSKEL), "Persentil (0-100) pris/km/rekkevidde må slå for å telle som 'fremragende' og varsles om"],
+    ["GodtKjopTerskel", str(config.DEFAULT_GODT_KJOP_TERSKEL), "Persentil (0-100) kr/gjenværende km (og for elbiler rekkevidde) må slå for å telle som 'fremragende' og varsles om"],
     ["MinKohort", str(config.DEFAULT_MIN_COHORT), "Minimum sammenligningsbiler før vi gir en vurdering"],
-    ["RegresjonKohort", str(config.DEFAULT_REGRESJON_COHORT), "Minimum sammenligningsbiler før vi bruker regresjon i stedet for persentil"],
     ["LookbackDager", str(config.DEFAULT_LOOKBACK_DAYS), "Hvor mange dager bakover som telles med i sammenligningsgrunnlaget"],
     ["StandardMaksPrisVarsel", str(config.DEFAULT_MAKS_PRIS_VARSEL), "Brukes når en Merker-rad ikke har egen 'Maks pris (varsel)'"],
     ["MinRekkevidde", str(config.DEFAULT_MIN_REKKEVIDDE), "Kun elbiler med rekkevidde (WLTP) over dette telles med i merke-regresjonen"],
@@ -155,7 +154,6 @@ def read_settings_overrides(spreadsheet):
     defaults = {
         "GodtKjopTerskel": config.DEFAULT_GODT_KJOP_TERSKEL,
         "MinKohort": config.DEFAULT_MIN_COHORT,
-        "RegresjonKohort": config.DEFAULT_REGRESJON_COHORT,
         "LookbackDager": config.DEFAULT_LOOKBACK_DAYS,
         "StandardMaksPrisVarsel": config.DEFAULT_MAKS_PRIS_VARSEL,
         "MinRekkevidde": config.DEFAULT_MIN_REKKEVIDDE,
@@ -179,7 +177,11 @@ def _worksheet_to_df(worksheet, columns):
         return pd.DataFrame(columns=columns)
     header, rows = values[0], values[1:]
     df = pd.DataFrame(rows, columns=header)
-    for col in ("pris", "kilometerstand", "rekkevidde_wltp", "aarsmodell", "deal_score", "regresjon_avvik_pct"):
+    numeric_cols = (
+        "pris", "kilometerstand", "rekkevidde_wltp", "aarsmodell", "deal_score", "regresjon_avvik_pct",
+        "batteri_kapasitet_kwh", "gjenvaerende_km", "kr_per_gjenvaerende_km",
+    )
+    for col in numeric_cols:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
     return df
@@ -348,7 +350,7 @@ def write_stats_tables(spreadsheet, tables):
     stablet vertikalt i Statistikk-fanen, med to tomme rader mellom hver.
 
     Returnerer et layout-dict {navn: {"columns", "data_start_row", "data_end_row"}}
-    (0-indekserte radnumre) slik at f.eks. apply_price_vs_km_charts vet nøyaktig
+    (0-indekserte radnumre) slik at f.eks. apply_bubble_charts vet nøyaktig
     hvor hver tabells data endte opp, uten å anta faste rader for hånd."""
     worksheet = spreadsheet.worksheet(config.TAB_STATISTIKK)
     worksheet.clear()
@@ -377,10 +379,19 @@ def write_stats_tables(spreadsheet, tables):
     return layout
 
 
-def apply_price_vs_km_charts(spreadsheet, layout, table_prefix="Pris vs. km — "):
-    """Lager ett punktdiagram (pris mot kilometerstand) per bilmerke, ut fra
+def apply_bubble_charts(spreadsheet, layout, chart_specs):
+    """Lager ett boblediagram (pris mot kilometerstand) per spec, ut fra
     tabellene write_stats_tables la i layout-dict-en. Fjerner og lager alle
-    diagrammene på nytt hver kjøring for å holde dem i takt med dataene."""
+    diagrammene på nytt hver kjøring for å holde dem i takt med dataene.
+
+    chart_specs: liste av dict med nøklene:
+      table_title  -- navnet på tabellen i layout (fra write_stats_tables)
+      chart_title  -- tittelen som vises over diagrammet
+      group_col    -- kolonnenavn brukt til å fargelegge punkter i grupper
+                      (f.eks. "Merke" eller "Batteristørrelse"), eller None
+      size_col     -- kolonnenavn brukt til boblestørrelse (f.eks.
+                      "Batteri kWh"), eller None for ensartet størrelse
+    """
     worksheet = spreadsheet.worksheet(config.TAB_STATISTIKK)
     sheet_id = worksheet.id
 
@@ -396,41 +407,42 @@ def apply_price_vs_km_charts(spreadsheet, layout, table_prefix="Pris vs. km — 
 
     add_requests = []
     chart_index = 0
-    for title, info in layout.items():
-        if not title.startswith(table_prefix) or info["data_start_row"] is None:
+    for spec in chart_specs:
+        info = layout.get(spec["table_title"])
+        if info is None or info["data_start_row"] is None:
             continue
-        brand = title[len(table_prefix):]
         columns = info["columns"]
-        km_col = columns.index("Kilometerstand")
-        pris_col = columns.index("Pris")
+        if "Kilometerstand" not in columns or "Pris" not in columns:
+            continue
 
-        def col_range(col_index):
+        def col_range(col_name, info=info):
             return {
                 "sheetId": sheet_id,
                 "startRowIndex": info["data_start_row"],
                 "endRowIndex": info["data_end_row"] + 1,
-                "startColumnIndex": col_index,
-                "endColumnIndex": col_index + 1,
+                "startColumnIndex": columns.index(col_name),
+                "endColumnIndex": columns.index(col_name) + 1,
             }
+
+        bubble_chart = {
+            "domain": {"sourceRange": {"sources": [col_range("Kilometerstand")]}},
+            "series": {"sourceRange": {"sources": [col_range("Pris")]}},
+            "legendPosition": "RIGHT_LEGEND" if spec.get("group_col") else "NO_LEGEND",
+        }
+        group_col = spec.get("group_col")
+        if group_col and group_col in columns:
+            bubble_chart["groupIds"] = {"sourceRange": {"sources": [col_range(group_col)]}}
+        size_col = spec.get("size_col")
+        if size_col and size_col in columns:
+            bubble_chart["bubbleSizes"] = {"sourceRange": {"sources": [col_range(size_col)]}}
 
         add_requests.append(
             {
                 "addChart": {
                     "chart": {
                         "spec": {
-                            "title": f"Pris vs. kilometerstand — {brand}",
-                            "basicChart": {
-                                "chartType": "SCATTER",
-                                "legendPosition": "NO_LEGEND",
-                                "axis": [
-                                    {"position": "BOTTOM_AXIS", "title": "Kilometerstand"},
-                                    {"position": "LEFT_AXIS", "title": "Pris"},
-                                ],
-                                "domains": [{"domain": {"sourceRange": {"sources": [col_range(km_col)]}}}],
-                                "series": [
-                                    {"series": {"sourceRange": {"sources": [col_range(pris_col)]}}, "targetAxis": "LEFT_AXIS"}
-                                ],
-                            },
+                            "title": spec["chart_title"],
+                            "bubbleChart": bubble_chart,
                         },
                         "position": {
                             "overlayPosition": {

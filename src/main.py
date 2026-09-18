@@ -21,7 +21,11 @@ def _now_iso():
 
 def _listings_to_df(listings):
     df = pd.DataFrame([l.to_row() for l in listings], columns=Listing.columns())
-    for col in ("pris", "kilometerstand", "rekkevidde_wltp", "aarsmodell", "deal_score", "regresjon_avvik_pct"):
+    numeric_cols = (
+        "pris", "kilometerstand", "rekkevidde_wltp", "aarsmodell", "deal_score", "regresjon_avvik_pct",
+        "batteri_kapasitet_kwh", "gjenvaerende_km", "kr_per_gjenvaerende_km",
+    )
+    for col in numeric_cols:
         df[col] = pd.to_numeric(df[col], errors="coerce")
     return df
 
@@ -51,6 +55,15 @@ def _build_listing_from_detail(detail, fallback_merke, fallback_modell, now_iso)
         karosseri=detail.get("karosseri", ""),
         sted=detail.get("sted", ""),
         selger_type=detail.get("selger_type", ""),
+        hjuldrift=detail.get("hjuldrift", ""),
+        batteri_kapasitet_kwh=detail.get("batteri_kapasitet_kwh"),
+        utstyrspakke=detail.get("utstyrspakke", ""),
+        varmepumpe=detail.get("varmepumpe", ""),
+        head_up_display=detail.get("head_up_display", ""),
+        oppvarmet_ratt=detail.get("oppvarmet_ratt", ""),
+        oppvarmede_seter_foran=detail.get("oppvarmede_seter_foran", ""),
+        oppvarmede_seter_bak=detail.get("oppvarmede_seter_bak", ""),
+        tradlos_mobillading=detail.get("tradlos_mobillading", ""),
         forste_gang_sett=now_iso,
         sist_sett=now_iso,
     )
@@ -103,6 +116,7 @@ def _process_brand_model(client, spreadsheet, setting, all_active_listings, now_
 
 
 def _score_all(all_listings, history_df, overrides, now_iso):
+    reference_year = datetime.fromisoformat(now_iso).year
     lookback_cutoff = datetime.now(timezone.utc) - timedelta(days=overrides["LookbackDager"])
 
     active_df = _listings_to_df(all_listings)
@@ -122,12 +136,15 @@ def _score_all(all_listings, history_df, overrides, now_iso):
     scored = []
     for listing in all_listings:
         cohort = combined[(combined["merke"] == listing.merke) & (combined["modell"] == listing.modell)]
-        result = scoring.compute_score(listing, cohort, overrides["MinKohort"], overrides["RegresjonKohort"])
+        result = scoring.compute_score(listing, cohort, overrides["MinKohort"], reference_year)
         listing.deal_score = result.score
         listing.deal_label = result.label
+        listing.kr_per_gjenvaerende_km, listing.gjenvaerende_km = scoring.kr_per_remaining_km(
+            listing.pris, listing.aarsmodell, listing.kilometerstand, reference_year
+        )
 
         is_exceptional, km_percentile, range_percentile = scoring.evaluate_deal(
-            listing, cohort, overrides["MinKohort"], overrides["GodtKjopTerskel"]
+            listing, cohort, overrides["MinKohort"], overrides["GodtKjopTerskel"], reference_year
         )
         listing.fremragende_kjop = is_exceptional
 
@@ -204,12 +221,38 @@ def run():
             "Prisutvikling per årsmodell": stats.build_price_by_year(updated_active_df, history_df),
             "Nye/fjernet per uke": stats.build_new_removed_counts(active_df, history_df),
             "Fordeling av vurdering": stats.build_score_distribution(updated_active_df),
+            "Škoda Enyaq vs. VW ID.4 (per hjuldrift)": stats.build_model_drivetrain_comparison(
+                updated_active_df, [("Skoda", "Enyaq"), ("Volkswagen", "ID.4")]
+            ),
         }
+
+        chart_specs = []
         for brand, brand_df in stats.build_price_vs_km_by_brand(updated_active_df).items():
-            stat_tables[f"Pris vs. km — {brand}"] = brand_df
+            title = f"Pris vs. km — {brand}"
+            stat_tables[title] = brand_df
+            chart_specs.append(
+                {
+                    "table_title": title,
+                    "chart_title": f"Pris vs. kilometerstand — {brand}",
+                    "group_col": "Batteristørrelse",
+                }
+            )
+
+        drivetrain_titles = {"4x4": "Pris vs. km — 4x4 (alle merker)", "2-hjulsdrift": "Pris vs. km — 2-hjulsdrift (alle merker)"}
+        for category, drivetrain_df in stats.build_price_vs_km_by_drivetrain(updated_active_df).items():
+            title = drivetrain_titles[category]
+            stat_tables[title] = drivetrain_df
+            chart_specs.append(
+                {
+                    "table_title": title,
+                    "chart_title": f"Pris vs. kilometerstand — {category} (alle merker, boblestørrelse=batteri-kWh)",
+                    "group_col": "Merke",
+                    "size_col": "Batteri kWh",
+                }
+            )
 
         layout = sheets_client.write_stats_tables(spreadsheet, stat_tables)
-        sheets_client.apply_price_vs_km_charts(spreadsheet, layout)
+        sheets_client.apply_bubble_charts(spreadsheet, layout, chart_specs)
 
     except BlockedError as exc:
         logger.error("Avbryter kjøringen -- blokkert av Finn.no: %s", exc)

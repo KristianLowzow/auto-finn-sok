@@ -29,6 +29,20 @@ class Listing:
     fremragende_kjop: bool = False  # skiller seg positivt ut på pris, km OG (for elbil) rekkevidde
     regresjon_avvik_pct: float = None  # % under(-)/over(+) merkets pris-regresjonslinje (år+km+rekkevidde)
     varslet: bool = False
+    # --- Lagt til senere: appendes bakerst slik at kolonneposisjonene til feltene
+    # over ikke endres -- Historikk/Sjekk enkeltannonse er append-only faner der
+    # gamle rader ville blitt feilaktig forskjøvet hvis nye felt ble satt inn midt i.
+    hjuldrift: str = ""  # "Firehjulsdrift" / "Bakhjulsdrift" / "Forhjulsdrift"
+    batteri_kapasitet_kwh: float = None  # kun relevant for elbiler
+    gjenvaerende_km: float = None  # estimert gjenværende levetid i km, se scoring.remaining_km
+    kr_per_gjenvaerende_km: float = None  # pris / gjenvaerende_km -- lavere er bedre, erstatter gammel prisbasert vurdering
+    utstyrspakke: str = ""  # kommaseparert liste over alt utstyr Finn lister for annonsen
+    varmepumpe: str = ""  # "Ja"/"Nei"/"Ukjent"
+    head_up_display: str = ""
+    oppvarmet_ratt: str = ""
+    oppvarmede_seter_foran: str = ""
+    oppvarmede_seter_bak: str = ""
+    tradlos_mobillading: str = ""
 
     @staticmethod
     def columns():

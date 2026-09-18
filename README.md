@@ -55,8 +55,19 @@ i Kjørelogg-fanen.
    kryss av Aktiv=TRUE. Kjør workflowen manuelt igjen for å bekrefte at den
    plukker opp innstillingen.
 9. **Statistikk-fanen**: dataene skrives automatisk til faste tabeller der.
-   Ett **punktdiagram per bilmerke** (pris mot kilometerstand) opprettes og
-   oppdateres helt automatisk hver kjøring -- ingenting å sette opp manuelt.
+   Følgende boblediagram opprettes og oppdateres helt automatisk hver kjøring
+   -- ingenting å sette opp manuelt:
+   - **Ett per bilmerke** (pris mot kilometerstand), fargekodet på
+     **batteristørrelse**.
+   - **To samlede diagram på tvers av alle merker/modeller**: ett for 4x4 og
+     ett for 2-hjulsdrift, fargekodet på **merke**, med boblestørrelse =
+     batterikapasitet (kWh) -- slik kan du sammenligne f.eks. Škoda Enyaq mot
+     VW ID.4 innenfor samme hjuldrift-type.
+
+   I tillegg finnes tabellen **"Škoda Enyaq vs. VW ID.4 (per hjuldrift)"**
+   med snittpris/-km/-kr-per-gjenværende-km brutt ned på hjuldrift, som et
+   direkte tallsvar på "hva får jeg for pengene" for de to modellene.
+
    For de andre tabellene (Prisutvikling per uke/årsmodell, Nye/fjernet per
    uke, Fordeling av vurdering) må du sette opp ett diagram i Sheets manuelt
    én gang per tabell; grafen oppdateres automatisk etter hvert som tabellen
@@ -93,10 +104,10 @@ eller mobilnettleser.
 
 Du får **ikke** e-post for hver "Godt kjøp" -- det ville fort blitt for mange.
 E-post sendes bare for annonser som er markert **Fremragende**, altså biler
-som samtidig er blant de billigste OG har lavest kilometerstand for
-merke+modellen sin (begge over `GodtKjopTerskel`-persentilen), OG -- for
-elbiler -- også har lengst rekkevidde. En bensinbil trenger bare slå ut på
-pris og km; rekkevidde er ikke relevant der.
+som har lavest kr per gjenværende km (se under) for merke+modellen sin, over
+`GodtKjopTerskel`-persentilen, OG -- for elbiler -- også har lengst
+rekkevidde. En bensinbil trenger bare slå ut på kr/gjenværende km;
+rekkevidde er ikke relevant der.
 
 Alle Fremragende-treff i én kjøring samles i **én** e-postrapport (ikke én
 e-post per bil), med pris/km/rekkevidde-persentilene så du ser hvorfor bilen
@@ -131,11 +142,10 @@ sammenligningsgrunnlaget. Stå tom for en rad betyr at
 
 Innstillinger-fanen i arket lar deg justere:
 
-- `GodtKjopTerskel` -- persentil (0-100) pris/km/rekkevidde må slå for å telle
-  som Fremragende og utløse e-postvarsel (standard 75)
+- `GodtKjopTerskel` -- persentil (0-100) kr/gjenværende km (og for elbiler
+  rekkevidde) må slå for å telle som Fremragende og utløse e-postvarsel
+  (standard 75)
 - `MinKohort` -- minimum sammenligningsbiler før noen vurdering gis (standard 5)
-- `RegresjonKohort` -- minimum sammenligningsbiler før regresjon brukes i
-  stedet for enkel persentilrangering (standard 15)
 - `LookbackDager` -- hvor mange dager bakover som telles med i
   sammenligningsgrunnlaget (standard 90)
 - `StandardMaksPrisVarsel` -- brukes når en Merker-rad ikke har egen "Maks
@@ -162,23 +172,32 @@ python scripts/local_dry_run.py --brand Toyota --model Corolla --write
 ## Hvordan "godt kjøp" (Deal Label) beregnes
 
 Se docstringen øverst i [src/scoring.py](src/scoring.py) -- kort fortalt:
-prisen sammenlignes med andre annonser av samme merke+modell. Med for få
-sammenligningsbiler gis ingen vurdering. Med noen flere rangeres prisen som
-persentil i gruppen. Med mange nok brukes en enkel modell som justerer for
-år og kilometerstand. Modellen blir automatisk mer presis etter hvert som
-data samles opp over uker. Dette er den generelle Deal Label-en (Godt kjøp/
-Gjennomsnittlig/Dyrt) som vises for *alle* annonser i Aktive Annonser --
-den strengere "Fremragende"-vurderingen som utløser e-post er beskrevet
-over.
+i stedet for å bare se på rå pris regnes bilens antatte **gjenværende
+levetid i kilometer** ut først. Bilen regnes som "ferdig" ved det som
+inntreffer først av:
+
+- **18 år** gammel, eller
+- **260 000 km** totalt, gitt en antatt kjørelengde på **~14 000 km/år**
+  fra i dag.
+
+`Kr per gjenværende km` = pris delt på denne gjenværende kilometerstanden --
+lavere er bedre, siden det belønner både lav pris OG mye kjørelengde igjen
+(en bil med høy km-stand men også høy gjenværende-levetid kan fortsatt være
+et godt kjøp). Denne verdien rangeres som persentil mot andre annonser av
+samme merke+modell for å gi Deal Label (Godt kjøp/Gjennomsnittlig/Dyrt). Med
+for få sammenligningsbiler gis ingen vurdering. Kolonnene
+**"Gjenvaerende km"** og **"Kr per gjenvaerende km"** i Aktive Annonser viser
+tallene bak vurderingen. Den strengere "Fremragende"-vurderingen som utløser
+e-post er beskrevet over.
 
 ## Arkets faner
 
 | Fane | Innhold |
 |---|---|
 | Merker | Du redigerer: hvilke merker/modeller som følges, årsfilter, km-filter og "Maks pris (varsel)" |
-| Aktive Annonser | Script skriver: alle annonser som er live nå, med Deal Label, Fremragende og Regresjonsavvik % (fargelagt) |
+| Aktive Annonser | Script skriver: alle annonser som er live nå, med Deal Label, Fremragende, Regresjonsavvik % (fargelagt), hjuldrift, batterikapasitet, utstyrspakke og utstyrsflagg (varmepumpe, head-up display, ratt-/setevarme, trådløs mobillading) |
 | Historikk | Script skriver: annonser som har forsvunnet (antatt solgt) |
-| Statistikk | Script skriver: tabeller + ett auto-generert pris/km-diagram per bilmerke |
+| Statistikk | Script skriver: tabeller + auto-genererte pris/km-boblediagram (per merke, og samlet per hjuldrift) + Enyaq/ID.4-sammenligning |
 | Kjørelogg | Script skriver: én rad per kjøring, for feilsøking |
 | Innstillinger | Du redigerer: terskler for vurdering og varsling |
 | Sjekk enkeltannonse | Script skriver: resultat fra manuelle enkelt-sjekk |

@@ -25,7 +25,8 @@ logger = logging.getLogger(__name__)
 
 def check_url(url):
     setup_logging()
-    now_iso = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    now = datetime.now(timezone.utc)
+    now_iso = now.isoformat(timespec="seconds")
 
     finn_id = finn_id_from_url(url)
     if not finn_id:
@@ -45,12 +46,22 @@ def check_url(url):
         variant=detail.get("variant", ""),
         aarsmodell=detail.get("aarsmodell"),
         kilometerstand=detail.get("kilometerstand"),
+        rekkevidde_wltp=detail.get("rekkevidde_wltp"),
         pris=detail.get("pris"),
         drivstoff=detail.get("drivstoff", ""),
         girkasse=detail.get("girkasse", ""),
         karosseri=detail.get("karosseri", ""),
         sted=detail.get("sted", ""),
         selger_type=detail.get("selger_type", ""),
+        hjuldrift=detail.get("hjuldrift", ""),
+        batteri_kapasitet_kwh=detail.get("batteri_kapasitet_kwh"),
+        utstyrspakke=detail.get("utstyrspakke", ""),
+        varmepumpe=detail.get("varmepumpe", ""),
+        head_up_display=detail.get("head_up_display", ""),
+        oppvarmet_ratt=detail.get("oppvarmet_ratt", ""),
+        oppvarmede_seter_foran=detail.get("oppvarmede_seter_foran", ""),
+        oppvarmede_seter_bak=detail.get("oppvarmede_seter_bak", ""),
+        tradlos_mobillading=detail.get("tradlos_mobillading", ""),
         forste_gang_sett=now_iso,
         sist_sett=now_iso,
     )
@@ -65,9 +76,12 @@ def check_url(url):
     combined = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=Listing.columns())
     cohort = combined[(combined["merke"] == listing.merke) & (combined["modell"] == listing.modell)] if not combined.empty else combined
 
-    result = scoring.compute_score(listing, cohort, overrides["MinKohort"], overrides["RegresjonKohort"])
+    result = scoring.compute_score(listing, cohort, overrides["MinKohort"], now.year)
     listing.deal_score = result.score
     listing.deal_label = result.label
+    listing.kr_per_gjenvaerende_km, listing.gjenvaerende_km = scoring.kr_per_remaining_km(
+        listing.pris, listing.aarsmodell, listing.kilometerstand, now.year
+    )
 
     row = [now_iso, url] + listing.to_row()
     sheets_client.append_enkeltsjekk(spreadsheet, row)

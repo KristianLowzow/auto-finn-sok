@@ -2,10 +2,18 @@
 
 import pandas as pd
 
+from src.scoring import drivetrain_category
+
 
 def _iso_week(date_series):
     dates = pd.to_datetime(date_series, errors="coerce")
     return dates.dt.strftime("%G-U%V")
+
+
+def _battery_bucket(kwh):
+    if pd.isna(kwh):
+        return "Ukjent"
+    return f"{int(round(kwh))} kWh"
 
 
 def build_price_trend(active_df, history_df):
@@ -32,15 +40,17 @@ def build_price_trend(active_df, history_df):
 
 def build_price_vs_km_by_brand(active_df):
     """Én tabell per merke (Kilometerstand, Pris, Modell, Vurdering,
-    Regresjonsavvik %) -- grunnlag for ett punktdiagram per bilmerke.
-    Returnerer en dict {merke: DataFrame}, kun for merker med data."""
+    Regresjonsavvik %, Batteristørrelse) -- grunnlag for ett boblediagram per
+    bilmerke, fargekodet på batteristørrelse. Returnerer en dict
+    {merke: DataFrame}, kun for merker med data."""
     if active_df.empty:
         return {}
-    subset = active_df.dropna(subset=["pris", "kilometerstand"])
+    subset = active_df.dropna(subset=["pris", "kilometerstand"]).copy()
+    subset["Batteristørrelse"] = subset["batteri_kapasitet_kwh"].apply(_battery_bucket)
     result = {}
     for brand in sorted(subset["merke"].dropna().unique()):
         brand_df = subset[subset["merke"] == brand][
-            ["kilometerstand", "pris", "modell", "deal_label", "regresjon_avvik_pct"]
+            ["kilometerstand", "pris", "modell", "deal_label", "regresjon_avvik_pct", "Batteristørrelse"]
         ].sort_values("kilometerstand")
         if brand_df.empty:
             continue
@@ -54,6 +64,76 @@ def build_price_vs_km_by_brand(active_df):
             }
         )
     return result
+
+
+def build_price_vs_km_by_drivetrain(active_df):
+    """To tabeller ("4x4" og "2-hjulsdrift"), med ALLE merker/modeller samlet
+    -- grunnlag for to boblediagram (farge=Merke, boblestørrelse=batteri-kWh)
+    som lar deg sammenligne 4x4-biler mot hverandre og 2-hjulsdrevne biler
+    mot hverandre, uavhengig av merke. Returnerer dict {kategori: DataFrame},
+    kun for kategorier med data."""
+    if active_df.empty:
+        return {}
+    subset = active_df.dropna(subset=["pris", "kilometerstand"]).copy()
+    subset["Hjuldrift"] = subset["hjuldrift"].apply(drivetrain_category)
+    subset = subset.dropna(subset=["Hjuldrift"])
+    result = {}
+    for category in ("4x4", "2-hjulsdrift"):
+        cat_df = subset[subset["Hjuldrift"] == category][
+            ["kilometerstand", "pris", "merke", "modell", "batteri_kapasitet_kwh"]
+        ].sort_values("kilometerstand")
+        if cat_df.empty:
+            continue
+        result[category] = cat_df.rename(
+            columns={
+                "kilometerstand": "Kilometerstand",
+                "pris": "Pris",
+                "merke": "Merke",
+                "modell": "Modell",
+                "batteri_kapasitet_kwh": "Batteri kWh",
+            }
+        )
+    return result
+
+
+def build_model_drivetrain_comparison(active_df, model_pairs):
+    """Sammenligner utvalgte merke/modell-par (f.eks. Škoda Enyaq mot VW ID.4)
+    brutt ned på hjuldrift-kategori (4x4/2-hjulsdrift), slik at bakhjulsdrift
+    kan ses mot bakhjulsdrift og 4x4 mot 4x4. model_pairs: liste av
+    (merke, modell-delstreng) -- modell matches som "inneholder", slik at
+    varianter som "Enyaq Coupe" også tas med."""
+    cols = ["Merke", "Modell", "Hjuldrift", "Antall", "Snitt årsmodell", "Snitt km", "Snittpris", "Snitt kr per gjenværende km"]
+    if active_df.empty:
+        return pd.DataFrame(columns=cols)
+
+    df = active_df.dropna(subset=["pris"]).copy()
+    df["Hjuldrift"] = df["hjuldrift"].apply(drivetrain_category)
+    df = df.dropna(subset=["Hjuldrift"])
+
+    mask = pd.Series(False, index=df.index)
+    for merke, modell in model_pairs:
+        mask |= (df["merke"].str.lower() == merke.lower()) & df["modell"].str.contains(modell, case=False, na=False)
+    df = df[mask]
+    if df.empty:
+        return pd.DataFrame(columns=cols)
+
+    agg_kwargs = {
+        "Antall": ("pris", "size"),
+        "Snitt årsmodell": ("aarsmodell", "mean"),
+        "Snitt km": ("kilometerstand", "mean"),
+        "Snittpris": ("pris", "mean"),
+        "Snitt kr per gjenværende km": ("kr_per_gjenvaerende_km", "mean"),
+    }
+    grouped = (
+        df.groupby(["merke", "modell", "Hjuldrift"])
+        .agg(**agg_kwargs)
+        .reset_index()
+        .rename(columns={"merke": "Merke", "modell": "Modell"})
+    )
+    for col in ("Snitt årsmodell", "Snitt km", "Snittpris"):
+        grouped[col] = grouped[col].round(0)
+    grouped["Snitt kr per gjenværende km"] = grouped["Snitt kr per gjenværende km"].round(2)
+    return grouped[cols].sort_values(["Merke", "Modell", "Hjuldrift"])
 
 
 def build_price_by_year(active_df, history_df):

@@ -42,10 +42,13 @@ def send_daily_digest(candidates):
 
     sections = []
     for listing, score_result, km_percentile, range_percentile in candidates:
+        kr_per_km = (
+            f"{round(listing.kr_per_gjenvaerende_km, 2)} kr/km" if listing.kr_per_gjenvaerende_km is not None else "-"
+        )
         lines = [
             f"{listing.merke} {listing.modell} ({listing.variant})",
             f"Årsmodell: {listing.aarsmodell}   Kilometerstand: {listing.kilometerstand} km   Pris: {listing.pris} kr",
-            f"Pris-persentil: {score_result.score}/100   Km-persentil: {round(km_percentile, 1) if km_percentile is not None else '-'}/100",
+            f"Kr per gjenværende km: {kr_per_km}   Persentil: {score_result.score}/100   Km-persentil: {round(km_percentile, 1) if km_percentile is not None else '-'}/100",
         ]
         if range_percentile is not None:
             lines.append(f"Rekkevidde (WLTP): {listing.rekkevidde_wltp} km   Rekkevidde-persentil: {round(range_percentile, 1)}/100")

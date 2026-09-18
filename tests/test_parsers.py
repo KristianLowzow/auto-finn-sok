@@ -78,3 +78,45 @@ def test_parse_ad_detail_range_is_none_when_field_absent():
     detail = parsers.parse_ad_detail(html)
 
     assert detail["rekkevidde_wltp"] is None
+
+
+def test_parse_ad_detail_extracts_equipment_features_and_wheel_drive():
+    html = _read("ad_page_ev_sample.html")
+    detail = parsers.parse_ad_detail(html)
+
+    assert detail["hjuldrift"] == "Firehjulsdrift"
+    assert "Varmepumpe" in detail["utstyrspakke"]
+    assert detail["varmepumpe"] == "Ja"
+    assert detail["head_up_display"] == "Ja"
+    assert detail["oppvarmet_ratt"] == "Ja"
+    assert detail["oppvarmede_seter_foran"] == "Ja"
+    assert detail["oppvarmede_seter_bak"] == "Nei"  # kun foran er utstyrt på denne bilen
+    assert detail["tradlos_mobillading"] == "Nei"
+
+
+def test_parse_ad_detail_feature_flags_unknown_without_equipment_data():
+    # Denne annonsen har en tom utstyrsliste i data-props -- vi skal da si
+    # "Ukjent" i stedet for å anta at funksjonene mangler.
+    html = _read("ad_page_sample.html")
+    detail = parsers.parse_ad_detail(html)
+
+    assert detail["hjuldrift"] == "Forhjulsdrift"
+    assert detail["utstyrspakke"] == ""
+    assert detail["varmepumpe"] == "Ukjent"
+    assert detail["head_up_display"] == "Ukjent"
+    assert detail["batteri_kapasitet_kwh"] is None
+
+
+def test_parse_battery_kwh_extracted_from_key_facts_text():
+    html = """
+    <html><body>
+    <script type="application/ld+json">
+    {"@type": "Product", "name": "Test EV", "brand": {"name": "TestMerke"}, "model": "TestModell",
+     "url": "https://www.finn.no/mobility/item/123456", "offers": {"price": 250000}}
+    </script>
+    <dl><dt>Batterikapasitet</dt><dd>77 kWh</dd></dl>
+    </body></html>
+    """
+    detail = parsers.parse_ad_detail(html, finn_id="123456", url="https://www.finn.no/mobility/item/123456")
+
+    assert detail["batteri_kapasitet_kwh"] == 77.0

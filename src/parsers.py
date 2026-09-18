@@ -13,8 +13,11 @@ som endres oftere. Hvis Finn endrer disse, skal vi feile høylytt
 (SchemaDriftError) i stedet for å skrive feil/tomme data til arket.
 """
 
+import base64
+import binascii
 import json
 import re
+from urllib.parse import unquote
 
 from bs4 import BeautifulSoup
 
@@ -43,6 +46,63 @@ def _clean_int(text):
         return None
     digits = re.sub(r"[^\d]", "", text)
     return int(digits) if digits else None
+
+
+# --- React-appens egen annonsedata (data-props) ---
+#
+# Finn embedder en rikere datakilde enn nøkkelinfo-listen og schema.org:
+# et data-props-attributt (base64 av en URL-prosentenkodet JSON-streng) som
+# blant annet inneholder strukturert utstyrsliste, hjuldrift og rekkevidde.
+# Best-effort: hvis Finn endrer formatet gir vi bare tom dict tilbake --
+# feltene herfra (utstyr, hjuldrift, batteri) er tillegg, ikke kritiske felt.
+
+
+def _extract_react_ad_data(soup):
+    container = soup.find(attrs={"data-props": True})
+    if container is None:
+        return {}
+    raw = container.get("data-props", "")
+    try:
+        decoded = base64.b64decode(raw + "==")
+        text = unquote(decoded.decode("utf-8"))
+        data = json.loads(text)
+    except (ValueError, UnicodeDecodeError, json.JSONDecodeError, binascii.Error):
+        return {}
+    return (data.get("adData") or {}).get("ad") or {}
+
+
+_BATTERY_KWH_RE = re.compile(r"batterikapasitet\D{0,12}?(\d+(?:[.,]\d+)?)\s*kwh", re.IGNORECASE)
+
+
+def _parse_battery_kwh(text):
+    match = _BATTERY_KWH_RE.search(text or "")
+    if not match:
+        return None
+    try:
+        return float(match.group(1).replace(",", "."))
+    except ValueError:
+        return None
+
+
+# Kjente etiketter fra Finns egen (faste) utstyrsvokabular -- matches eksakt
+# (case-insensitive) mot verdiene i annonsens "equipment"-liste.
+_EQUIPMENT_FEATURE_LABELS = {
+    "varmepumpe": "Varmepumpe",
+    "head_up_display": "Head up display",
+    "oppvarmet_ratt": "Oppvarmet ratt",
+    "oppvarmede_seter_foran": "Oppvarmede seter, foran",
+    "oppvarmede_seter_bak": "Oppvarmede seter, bak",
+    "tradlos_mobillading": "Trådløs mobillading",
+}
+
+
+def _feature_flag(equipment_names_lower, label):
+    """"Ukjent" når vi ikke har noen utstyrsliste å sjekke mot i det hele
+    tatt (annonsen manglet data-props), ellers "Ja"/"Nei" ut fra om den
+    eksakte etiketten finnes i listen."""
+    if not equipment_names_lower:
+        return "Ukjent"
+    return "Ja" if label.lower() in equipment_names_lower else "Nei"
 
 
 # --- Søkeresultater ---
@@ -164,6 +224,11 @@ def parse_ad_detail(html, finn_id=None, url=None):
     product_ld = next((b for b in ld_blocks if b.get("@type") == "Product"), {})
 
     facts = _parse_key_facts(soup)
+    ad_data = _extract_react_ad_data(soup)
+
+    equipment_entries = ad_data.get("equipment") or []
+    equipment_names = [e.get("value", "") for e in equipment_entries if isinstance(e, dict) and e.get("value")]
+    equipment_names_lower = {name.strip().lower() for name in equipment_names}
 
     brand = (product_ld.get("brand") or {}).get("name") or facts.get("merke_dt", "")
     model_field = product_ld.get("model")
@@ -184,13 +249,22 @@ def parse_ad_detail(html, finn_id=None, url=None):
         "modell": model_name,
         "aarsmodell": _clean_int(facts.get("aarsmodell")),
         "kilometerstand": _clean_int(facts.get("kilometerstand")),
-        "rekkevidde_wltp": _clean_int(facts.get("rekkevidde_wltp")),
+        "rekkevidde_wltp": _clean_int(facts.get("rekkevidde_wltp")) or ad_data.get("driving_range"),
         "pris": price,
         "drivstoff": facts.get("drivstoff", ""),
         "girkasse": facts.get("girkasse", ""),
         "karosseri": facts.get("karosseri", ""),
         "sted": _parse_location_postal_code(html),
         "selger_type": _parse_seller_type(product_ld),
+        "hjuldrift": (ad_data.get("wheel_drive") or {}).get("value", ""),
+        "batteri_kapasitet_kwh": _parse_battery_kwh(soup.get_text(" ")),
+        "utstyrspakke": ", ".join(equipment_names),
+        "varmepumpe": _feature_flag(equipment_names_lower, _EQUIPMENT_FEATURE_LABELS["varmepumpe"]),
+        "head_up_display": _feature_flag(equipment_names_lower, _EQUIPMENT_FEATURE_LABELS["head_up_display"]),
+        "oppvarmet_ratt": _feature_flag(equipment_names_lower, _EQUIPMENT_FEATURE_LABELS["oppvarmet_ratt"]),
+        "oppvarmede_seter_foran": _feature_flag(equipment_names_lower, _EQUIPMENT_FEATURE_LABELS["oppvarmede_seter_foran"]),
+        "oppvarmede_seter_bak": _feature_flag(equipment_names_lower, _EQUIPMENT_FEATURE_LABELS["oppvarmede_seter_bak"]),
+        "tradlos_mobillading": _feature_flag(equipment_names_lower, _EQUIPMENT_FEATURE_LABELS["tradlos_mobillading"]),
     }
 
     if not result["finn_id"] or result["pris"] is None or not (result["merke"] or result["modell"]):

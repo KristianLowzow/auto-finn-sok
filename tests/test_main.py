@@ -4,7 +4,7 @@ from src.main import _score_all
 from src.models import Listing
 
 NOW = "2026-08-21T21:00:00+00:00"
-OVERRIDES = {"GodtKjopTerskel": 80, "MinKohort": 5, "RegresjonKohort": 15, "LookbackDager": 90, "MinRekkevidde": 400}
+OVERRIDES = {"GodtKjopTerskel": 80, "MinKohort": 5, "LookbackDager": 90, "MinRekkevidde": 400}
 
 
 def _electric_listing(finn_id, pris, km, rekkevidde):
@@ -33,4 +33,6 @@ def test_score_all_handles_mixed_missing_range_without_crashing():
 
     by_id = {listing.finn_id: (listing, result, km_pct, range_pct) for listing, result, km_pct, range_pct in scored}
     assert by_id["6"][0].fremragende_kjop is True
-    assert by_id["2"][0].deal_score is not None  # fikk likevel en pris-vurdering
+    assert by_id["2"][0].deal_score is not None  # fikk likevel en vurdering
+    assert by_id["1"][0].kr_per_gjenvaerende_km is not None
+    assert by_id["1"][0].gjenvaerende_km is not None
