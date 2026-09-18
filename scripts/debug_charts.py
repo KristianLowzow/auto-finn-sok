@@ -136,6 +136,45 @@ def main():
             if response is not None:
                 print(f"RAW RESPONSE BODY: {response.text}")
 
+    # Sanity check: virker den GAMLE, kjente basicChart SCATTER-typen fortsatt
+    # med akkurat samme kilde-ranges? Hvis JA, er bubbleChart spesifikt
+    # problemet (evt. en feil i selve requesten); hvis NEI, er noe annet
+    # (tilgang/kvote/kontostatus) galt med selve kontoen/arket.
+    basic_request = {
+        "addChart": {
+            "chart": {
+                "spec": {
+                    "title": "DEBUG basicChart baseline",
+                    "basicChart": {
+                        "chartType": "SCATTER",
+                        "legendPosition": "NO_LEGEND",
+                        "domains": [{"domain": {"sourceRange": {"sources": [skoda_col_range("Kilometerstand")]}}}],
+                        "series": [
+                            {"series": {"sourceRange": {"sources": [skoda_col_range("Pris")]}}, "targetAxis": "LEFT_AXIS"}
+                        ],
+                    },
+                },
+                "position": {
+                    "overlayPosition": {
+                        "anchorCell": {"sheetId": sheet_id, "rowIndex": 500, "columnIndex": 12},
+                        "widthPixels": 600,
+                        "heightPixels": 371,
+                    }
+                },
+            }
+        }
+    }
+    print("\n=== Variant 'basicChart baseline' ===")
+    print(json.dumps(basic_request, ensure_ascii=False))
+    try:
+        spreadsheet.batch_update({"requests": [basic_request]})
+        print("OK")
+    except Exception as exc:
+        print(f"FEILET: {exc}")
+        response = getattr(exc, "response", None)
+        if response is not None:
+            print(f"RAW RESPONSE BODY: {response.text}")
+
     print("\n\n### Nå de fulle chart_specs ###")
     for i, spec in enumerate(chart_specs):
         info = layout[spec["table_title"]]
