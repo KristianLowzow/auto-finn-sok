@@ -458,4 +458,8 @@ def apply_bubble_charts(spreadsheet, layout, chart_specs):
         chart_index += 1
 
     if add_requests:
-        spreadsheet.batch_update({"requests": add_requests})
+        try:
+            spreadsheet.batch_update({"requests": add_requests})
+        except gspread.exceptions.APIError:
+            logger.error("addChart-forespørsel feilet, full payload for feilsøking: %s", json.dumps(add_requests))
+            raise

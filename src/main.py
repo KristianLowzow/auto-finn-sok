@@ -251,8 +251,15 @@ def run():
                 }
             )
 
-        layout = sheets_client.write_stats_tables(spreadsheet, stat_tables)
-        sheets_client.apply_bubble_charts(spreadsheet, layout, chart_specs)
+        try:
+            layout = sheets_client.write_stats_tables(spreadsheet, stat_tables)
+            sheets_client.apply_bubble_charts(spreadsheet, layout, chart_specs)
+        except Exception as exc:
+            # Statistikk/diagram er et tillegg -- en feil her skal ikke gjøre at
+            # allerede skrevne Aktive Annonser/scoring regnes som en mislykket kjøring.
+            logger.exception("Klarte ikke å oppdatere Statistikk-fanen/diagrammene")
+            run_stats["feil"] += 1
+            run_stats["feilmeldinger"].append(f"Statistikk/diagram feilet: {type(exc).__name__}: {exc}")
 
     except BlockedError as exc:
         logger.error("Avbryter kjøringen -- blokkert av Finn.no: %s", exc)
