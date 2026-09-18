@@ -84,25 +84,32 @@ def _parse_battery_kwh(text):
         return None
 
 
-# Kjente etiketter fra Finns egen (faste) utstyrsvokabular -- matches eksakt
-# (case-insensitive) mot verdiene i annonsens "equipment"-liste.
-_EQUIPMENT_FEATURE_LABELS = {
-    "varmepumpe": "Varmepumpe",
-    "head_up_display": "Head up display",
-    "oppvarmet_ratt": "Oppvarmet ratt",
-    "oppvarmede_seter_foran": "Oppvarmede seter, foran",
-    "oppvarmede_seter_bak": "Oppvarmede seter, bak",
-    "tradlos_mobillading": "Trådløs mobillading",
+# Finns utstyrsvokabular er IKKE så fast i praksis som navnet skulle tilsi --
+# samme funksjon skrives ulikt avhengig av hvilket system annonsen kommer fra
+# (f.eks. "Head up display" vs. "Head-up-display", "Oppvarmet ratt" vs.
+# "Ratt oppvarmet"). Derfor matcher vi på at ALLE nøkkelord under finnes et
+# sted i SAMME utstyrslinje (uavhengig av rekkefølge/tegnsetting), i stedet
+# for eksakt streng-likhet.
+_EQUIPMENT_FEATURE_KEYWORDS = {
+    "varmepumpe": ["varmepump"],
+    "head_up_display": ["head", "display"],
+    "oppvarmet_ratt": ["oppvarm", "ratt"],
+    "oppvarmede_seter_foran": ["oppvarm", "sete", "foran"],
+    "oppvarmede_seter_bak": ["oppvarm", "sete", "bak"],
+    "tradlos_mobillading": ["trådløs", "mobil"],
 }
 
 
-def _feature_flag(equipment_names_lower, label):
+def _feature_flag(equipment_names_lower, keywords):
     """"Ukjent" når vi ikke har noen utstyrsliste å sjekke mot i det hele
-    tatt (annonsen manglet data-props), ellers "Ja"/"Nei" ut fra om den
-    eksakte etiketten finnes i listen."""
+    tatt (annonsen manglet data-props), ellers "Ja"/"Nei" ut fra om alle
+    nøkkelordene finnes i minst én utstyrslinje."""
     if not equipment_names_lower:
         return "Ukjent"
-    return "Ja" if label.lower() in equipment_names_lower else "Nei"
+    for name in equipment_names_lower:
+        if all(keyword in name for keyword in keywords):
+            return "Ja"
+    return "Nei"
 
 
 # --- Søkeresultater ---
@@ -259,12 +266,12 @@ def parse_ad_detail(html, finn_id=None, url=None):
         "hjuldrift": (ad_data.get("wheel_drive") or {}).get("value", ""),
         "batteri_kapasitet_kwh": _parse_battery_kwh(soup.get_text(" ")),
         "utstyrspakke": ", ".join(equipment_names),
-        "varmepumpe": _feature_flag(equipment_names_lower, _EQUIPMENT_FEATURE_LABELS["varmepumpe"]),
-        "head_up_display": _feature_flag(equipment_names_lower, _EQUIPMENT_FEATURE_LABELS["head_up_display"]),
-        "oppvarmet_ratt": _feature_flag(equipment_names_lower, _EQUIPMENT_FEATURE_LABELS["oppvarmet_ratt"]),
-        "oppvarmede_seter_foran": _feature_flag(equipment_names_lower, _EQUIPMENT_FEATURE_LABELS["oppvarmede_seter_foran"]),
-        "oppvarmede_seter_bak": _feature_flag(equipment_names_lower, _EQUIPMENT_FEATURE_LABELS["oppvarmede_seter_bak"]),
-        "tradlos_mobillading": _feature_flag(equipment_names_lower, _EQUIPMENT_FEATURE_LABELS["tradlos_mobillading"]),
+        "varmepumpe": _feature_flag(equipment_names_lower, _EQUIPMENT_FEATURE_KEYWORDS["varmepumpe"]),
+        "head_up_display": _feature_flag(equipment_names_lower, _EQUIPMENT_FEATURE_KEYWORDS["head_up_display"]),
+        "oppvarmet_ratt": _feature_flag(equipment_names_lower, _EQUIPMENT_FEATURE_KEYWORDS["oppvarmet_ratt"]),
+        "oppvarmede_seter_foran": _feature_flag(equipment_names_lower, _EQUIPMENT_FEATURE_KEYWORDS["oppvarmede_seter_foran"]),
+        "oppvarmede_seter_bak": _feature_flag(equipment_names_lower, _EQUIPMENT_FEATURE_KEYWORDS["oppvarmede_seter_bak"]),
+        "tradlos_mobillading": _feature_flag(equipment_names_lower, _EQUIPMENT_FEATURE_KEYWORDS["tradlos_mobillading"]),
     }
 
     if not result["finn_id"] or result["pris"] is None or not (result["merke"] or result["modell"]):

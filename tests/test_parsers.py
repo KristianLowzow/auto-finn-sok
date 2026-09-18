@@ -94,6 +94,19 @@ def test_parse_ad_detail_extracts_equipment_features_and_wheel_drive():
     assert detail["tradlos_mobillading"] == "Nei"
 
 
+def test_feature_flag_matches_real_world_label_variants():
+    # Finns utstyrsvokabular er ikke like fast i praksis som det ser ut --
+    # observert i skarpe annonser: "Head-up-display" (bindestrek, ikke
+    # mellomrom) og "Ratt oppvarmet" (omvendt ordrekkefølge av "Oppvarmet
+    # ratt"). Begge skal fortsatt fanges opp.
+    equipment_lower = {"head-up-display", "ratt oppvarmet", "skinnratt"}
+
+    assert parsers._feature_flag(equipment_lower, parsers._EQUIPMENT_FEATURE_KEYWORDS["head_up_display"]) == "Ja"
+    assert parsers._feature_flag(equipment_lower, parsers._EQUIPMENT_FEATURE_KEYWORDS["oppvarmet_ratt"]) == "Ja"
+    # "Skinnratt" alene (uten "oppvarm") skal ikke gi falsk positiv
+    assert parsers._feature_flag({"skinnratt"}, parsers._EQUIPMENT_FEATURE_KEYWORDS["oppvarmet_ratt"]) == "Nei"
+
+
 def test_parse_ad_detail_feature_flags_unknown_without_equipment_data():
     # Denne annonsen har en tom utstyrsliste i data-props -- vi skal da si
     # "Ukjent" i stedet for å anta at funksjonene mangler.
