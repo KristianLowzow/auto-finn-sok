@@ -182,14 +182,42 @@ def refresh_statistics(spreadsheet, active_df, history_df, updated_active_df):
     for brand, brand_df in stats.build_price_vs_km_by_brand(updated_active_df).items():
         title = f"Pris vs. km — {brand}"
         stat_tables[title] = brand_df
-        chart_specs.append({"table_title": title, "chart_title": f"Pris vs. kilometerstand — {brand} (farge=batteristørrelse)"})
+        chart_specs.append(
+            {
+                "table_title": title,
+                "chart_title": f"Pris vs. kilometerstand — {brand} (farge=batteristørrelse)",
+                "series_prefix": stats.PRICE_SERIES_PREFIX,
+                "y_axis_title": "Pris",
+            }
+        )
 
     drivetrain_titles = {"4x4": "Pris vs. km — 4x4 (alle merker)", "2-hjulsdrift": "Pris vs. km — 2-hjulsdrift (alle merker)"}
     for category, drivetrain_df in stats.build_price_vs_km_by_drivetrain(updated_active_df).items():
         title = drivetrain_titles[category]
         stat_tables[title] = drivetrain_df
         chart_specs.append(
-            {"table_title": title, "chart_title": f"Pris vs. kilometerstand — {category} (alle merker, farge=merke)"}
+            {
+                "table_title": title,
+                "chart_title": f"Pris vs. kilometerstand — {category} (alle merker, farge=merke)",
+                "series_prefix": stats.PRICE_SERIES_PREFIX,
+                "y_axis_title": "Pris",
+            }
+        )
+
+    remaining_value_titles = {
+        "4x4": "Kr per gjenværende km vs. km — 4x4 (alle merker)",
+        "2-hjulsdrift": "Kr per gjenværende km vs. km — 2-hjulsdrift (alle merker)",
+    }
+    for category, remaining_value_df in stats.build_remaining_value_vs_km_by_drivetrain(updated_active_df).items():
+        title = remaining_value_titles[category]
+        stat_tables[title] = remaining_value_df
+        chart_specs.append(
+            {
+                "table_title": title,
+                "chart_title": f"Kr per gjenværende km vs. kilometerstand — {category} (alle merker, farge=merke)",
+                "series_prefix": stats.REMAINING_VALUE_SERIES_PREFIX,
+                "y_axis_title": "Kr per gjenværende km",
+            }
         )
 
     layout = sheets_client.write_stats_tables(spreadsheet, stat_tables)

@@ -385,8 +385,9 @@ def apply_grouped_scatter_charts(spreadsheet, layout, chart_specs):
     lager alle diagrammene på nytt hver kjøring for å holde dem i takt med
     dataene.
 
-    Fargekodingen kommer fra at kildetabellen har PRIS PIVOTERT til én
-    kolonne per kategori (se stats.SERIES_COLUMN_PREFIX = "Pris (") -- hver
+    Fargekodingen kommer fra at kildetabellen har verdien (pris, eller
+    kr/gjenværende km) PIVOTERT til én kolonne per kategori (se
+    stats.PRICE_SERIES_PREFIX / stats.REMAINING_VALUE_SERIES_PREFIX) -- hver
     slik kolonne blir sin egen serie, og Sheets fargelegger automatisk hver
     serie ulikt (samme triks som brukes for depresieringskurven). Vi bruker
     IKKE Sheets sin bubbleChart-type: den avviste konsekvent selv en minimal,
@@ -395,8 +396,13 @@ def apply_grouped_scatter_charts(spreadsheet, layout, chart_specs):
     fint med basicChart -- så inntil Google fikser det bruker vi basicChart.
 
     chart_specs: liste av dict med nøklene:
-      table_title  -- navnet på tabellen i layout (fra write_stats_tables)
-      chart_title  -- tittelen som vises over diagrammet
+      table_title    -- navnet på tabellen i layout (fra write_stats_tables)
+      chart_title    -- tittelen som vises over diagrammet
+      series_prefix  -- kolonneprefiks som identifiserer seriene (f.eks.
+                        stats.PRICE_SERIES_PREFIX eller
+                        stats.REMAINING_VALUE_SERIES_PREFIX)
+      y_axis_title   -- tittel på Y-aksen (f.eks. "Pris" eller
+                        "Kr per gjenværende km")
     """
     worksheet = spreadsheet.worksheet(config.TAB_STATISTIKK)
     sheet_id = worksheet.id
@@ -418,7 +424,7 @@ def apply_grouped_scatter_charts(spreadsheet, layout, chart_specs):
         if info is None or info["data_start_row"] is None:
             continue
         columns = info["columns"]
-        series_cols = [c for c in columns if c.startswith(stats.SERIES_COLUMN_PREFIX)]
+        series_cols = [c for c in columns if c.startswith(spec["series_prefix"])]
         if "Kilometerstand" not in columns or not series_cols:
             continue
 
@@ -447,7 +453,7 @@ def apply_grouped_scatter_charts(spreadsheet, layout, chart_specs):
                                 "headerCount": 1,
                                 "axis": [
                                     {"position": "BOTTOM_AXIS", "title": "Kilometerstand"},
-                                    {"position": "LEFT_AXIS", "title": "Pris"},
+                                    {"position": "LEFT_AXIS", "title": spec["y_axis_title"]},
                                 ],
                                 "domains": [
                                     {"domain": {"sourceRange": {"sources": [col_range("Kilometerstand", include_header=True)]}}}

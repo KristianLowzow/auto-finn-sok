@@ -44,19 +44,27 @@ def build_price_trend(active_df, history_df):
 # forespørselen var -- ser ut som en kjent svakhet i APIet, ikke en feil i
 # forespørselen vår (bekreftet ved at identiske sourceRange-er fungerer fint
 # med basicChart). Løsningen under bruker i stedet det ekte, veldokumenterte
-# trikset for fargekodede scatter-plott med rene Sheets-diagram: Pris pivotert
-# til én kolonne PER kategori (delt Kilometerstand-akse) -- Sheets fargelegger
-# automatisk hver kolonne som egen serie. Kolonner som starter med "Pris ("
-# plukkes opp som egne serier av sheets_client.apply_grouped_scatter_charts.
-SERIES_COLUMN_PREFIX = "Pris ("
+# trikset for fargekodede scatter-plott med rene Sheets-diagram: verdien som
+# plottes pivoteres til én kolonne PER kategori (delt Kilometerstand-akse) --
+# Sheets fargelegger automatisk hver kolonne som egen serie. Kolonner som
+# starter med disse prefiksene plukkes opp som egne serier av
+# sheets_client.apply_grouped_scatter_charts.
+PRICE_SERIES_PREFIX = "Pris ("
+REMAINING_VALUE_SERIES_PREFIX = "Kr per gjenværende km ("
+
+# Merk: Google Sheets-diagram har ingen støtte for å klikke på et enkeltpunkt
+# og hoppe til en URL -- det finnes rett og slett ikke i deres chart-API.
+# "Link"-kolonnen under er kompromisset: samme tabell som diagrammet leser
+# fra får en klikkbar Finn-URL per rad (Sheets autolinker URL-tekst), så du
+# kan slå opp annonsen fra tabellen rett under/ved siden av diagrammet.
 
 
 def build_price_vs_km_by_brand(active_df):
     """Én tabell per merke -- Kilometerstand, Modell, Vurdering,
-    Regresjonsavvik %, Batteristørrelse, og én "Pris (<batteristørrelse>)"-
-    kolonne per batteristørrelse i merket (grunnlag for et fargekodet
-    scatter-diagram per bilmerke). Returnerer en dict {merke: DataFrame}, kun
-    for merker med data."""
+    Regresjonsavvik %, Batteristørrelse, Link (til Finn-annonsen), og én
+    "Pris (<batteristørrelse>)"-kolonne per batteristørrelse i merket
+    (grunnlag for et fargekodet scatter-diagram per bilmerke). Returnerer en
+    dict {merke: DataFrame}, kun for merker med data."""
     if active_df.empty:
         return {}
     subset = active_df.dropna(subset=["pris", "kilometerstand"]).copy()
@@ -66,30 +74,28 @@ def build_price_vs_km_by_brand(active_df):
         brand_df = subset[subset["merke"] == brand].sort_values("kilometerstand")
         if brand_df.empty:
             continue
-        table = brand_df[["kilometerstand", "modell", "deal_label", "regresjon_avvik_pct", "Batteristørrelse"]].rename(
+        table = brand_df[["kilometerstand", "modell", "deal_label", "regresjon_avvik_pct", "Batteristørrelse", "url"]].rename(
             columns={
                 "kilometerstand": "Kilometerstand",
                 "modell": "Modell",
                 "deal_label": "Vurdering",
                 "regresjon_avvik_pct": "Regresjonsavvik %",
+                "url": "Link",
             }
         )
         for bucket in sorted(brand_df["Batteristørrelse"].unique()):
-            table[f"{SERIES_COLUMN_PREFIX}{bucket})"] = brand_df["pris"].where(brand_df["Batteristørrelse"] == bucket)
+            table[f"{PRICE_SERIES_PREFIX}{bucket})"] = brand_df["pris"].where(brand_df["Batteristørrelse"] == bucket)
         result[brand] = table
     return result
 
 
-def build_price_vs_km_by_drivetrain(active_df):
-    """To tabeller ("4x4" og "2-hjulsdrift"), med ALLE merker/modeller samlet
-    -- Kilometerstand, Modell, Batteri kWh, og én "Pris (<merke>)"-kolonne per
-    merke (grunnlag for et fargekodet scatter-diagram som lar deg sammenligne
-    4x4-biler mot hverandre og 2-hjulsdrevne biler mot hverandre, uavhengig av
-    merke). Returnerer dict {kategori: DataFrame}, kun for kategorier med
-    data."""
+def _pivot_value_by_brand_per_drivetrain(active_df, value_col, series_prefix, extra_cols=()):
+    """Delt hjelpefunksjon for build_price_vs_km_by_drivetrain og
+    build_remaining_value_vs_km_by_drivetrain -- begge har identisk oppsett
+    (gruppert på hjuldrift, pivotert på merke), bare med ulik verdikolonne."""
     if active_df.empty:
         return {}
-    subset = active_df.dropna(subset=["pris", "kilometerstand"]).copy()
+    subset = active_df.dropna(subset=[value_col, "kilometerstand"]).copy()
     subset["Hjuldrift"] = subset["hjuldrift"].apply(drivetrain_category)
     subset = subset.dropna(subset=["Hjuldrift"])
     result = {}
@@ -97,18 +103,37 @@ def build_price_vs_km_by_drivetrain(active_df):
         cat_df = subset[subset["Hjuldrift"] == category].sort_values("kilometerstand")
         if cat_df.empty:
             continue
-        table = cat_df[["kilometerstand", "merke", "modell", "batteri_kapasitet_kwh"]].rename(
-            columns={
-                "kilometerstand": "Kilometerstand",
-                "merke": "Merke",
-                "modell": "Modell",
-                "batteri_kapasitet_kwh": "Batteri kWh",
-            }
+        table = cat_df[["kilometerstand", "merke", "modell", "url", *extra_cols]].rename(
+            columns={"kilometerstand": "Kilometerstand", "merke": "Merke", "modell": "Modell", "url": "Link"}
         )
         for brand in sorted(cat_df["merke"].dropna().unique()):
-            table[f"{SERIES_COLUMN_PREFIX}{brand})"] = cat_df["pris"].where(cat_df["merke"] == brand)
+            table[f"{series_prefix}{brand})"] = cat_df[value_col].where(cat_df["merke"] == brand)
         result[category] = table
     return result
+
+
+def build_price_vs_km_by_drivetrain(active_df):
+    """To tabeller ("4x4" og "2-hjulsdrift"), med ALLE merker/modeller samlet
+    -- Kilometerstand, Modell, Link, Batteri kWh, og én "Pris (<merke>)"-
+    kolonne per merke (grunnlag for et fargekodet scatter-diagram som lar deg
+    sammenligne 4x4-biler mot hverandre og 2-hjulsdrevne biler mot hverandre,
+    uavhengig av merke). Returnerer dict {kategori: DataFrame}, kun for
+    kategorier med data."""
+    tables = _pivot_value_by_brand_per_drivetrain(
+        active_df, value_col="pris", series_prefix=PRICE_SERIES_PREFIX, extra_cols=["batteri_kapasitet_kwh"]
+    )
+    return {k: df.rename(columns={"batteri_kapasitet_kwh": "Batteri kWh"}) for k, df in tables.items()}
+
+
+def build_remaining_value_vs_km_by_drivetrain(active_df):
+    """Samme oppsett som build_price_vs_km_by_drivetrain, men med
+    "kr per gjenværende km" (se scoring.kr_per_remaining_km) som verdi i
+    stedet for rå pris -- to tabeller ("4x4"/"2-hjulsdrift") med én
+    "Kr per gjenværende km (<merke>)"-kolonne per merke, grunnlag for et
+    fargekodet scatter-diagram (farge=merke) per hjuldrift-kategori."""
+    return _pivot_value_by_brand_per_drivetrain(
+        active_df, value_col="kr_per_gjenvaerende_km", series_prefix=REMAINING_VALUE_SERIES_PREFIX
+    )
 
 
 def build_model_drivetrain_comparison(active_df, model_pairs):
