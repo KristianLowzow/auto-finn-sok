@@ -158,6 +158,44 @@ def _score_all(all_listings, history_df, overrides, now_iso):
     return scored
 
 
+def refresh_statistics(spreadsheet, active_df, history_df, updated_active_df):
+    """Bygger og skriver alle tabellene/diagrammene i Statistikk-fanen.
+
+    active_df/history_df: tilstanden FØR denne kjøringens endringer (brukt av
+    ukebaserte tabeller som teller "nye" mot when en annonse først ble sett).
+    updated_active_df: Aktive Annonser slik den ser ut ETTER denne kjøringen.
+
+    Egen funksjon (i stedet for inline i run()) slik at Statistikk kan bygges
+    på nytt fra det som allerede står i arket -- uten å skrape Finn.no på
+    nytt -- se scripts/refresh_stats.py."""
+    stat_tables = {
+        "Prisutvikling per uke": stats.build_price_trend(active_df, history_df),
+        "Prisutvikling per årsmodell": stats.build_price_by_year(updated_active_df, history_df),
+        "Nye/fjernet per uke": stats.build_new_removed_counts(active_df, history_df),
+        "Fordeling av vurdering": stats.build_score_distribution(updated_active_df),
+        "Škoda Enyaq vs. VW ID.4 (per hjuldrift)": stats.build_model_drivetrain_comparison(
+            updated_active_df, [("Skoda", "Enyaq"), ("Volkswagen", "ID.4")]
+        ),
+    }
+
+    chart_specs = []
+    for brand, brand_df in stats.build_price_vs_km_by_brand(updated_active_df).items():
+        title = f"Pris vs. km — {brand}"
+        stat_tables[title] = brand_df
+        chart_specs.append({"table_title": title, "chart_title": f"Pris vs. kilometerstand — {brand} (farge=batteristørrelse)"})
+
+    drivetrain_titles = {"4x4": "Pris vs. km — 4x4 (alle merker)", "2-hjulsdrift": "Pris vs. km — 2-hjulsdrift (alle merker)"}
+    for category, drivetrain_df in stats.build_price_vs_km_by_drivetrain(updated_active_df).items():
+        title = drivetrain_titles[category]
+        stat_tables[title] = drivetrain_df
+        chart_specs.append(
+            {"table_title": title, "chart_title": f"Pris vs. kilometerstand — {category} (alle merker, farge=merke)"}
+        )
+
+    layout = sheets_client.write_stats_tables(spreadsheet, stat_tables)
+    sheets_client.apply_grouped_scatter_charts(spreadsheet, layout, chart_specs)
+
+
 def run():
     setup_logging()
     start = time.monotonic()
@@ -215,34 +253,8 @@ def run():
         sheets_client.write_active_listings(spreadsheet, all_listings)
         sheets_client.apply_conditional_formatting(spreadsheet)
 
-        updated_active_df = _listings_to_df(all_listings)
-        stat_tables = {
-            "Prisutvikling per uke": stats.build_price_trend(active_df, history_df),
-            "Prisutvikling per årsmodell": stats.build_price_by_year(updated_active_df, history_df),
-            "Nye/fjernet per uke": stats.build_new_removed_counts(active_df, history_df),
-            "Fordeling av vurdering": stats.build_score_distribution(updated_active_df),
-            "Škoda Enyaq vs. VW ID.4 (per hjuldrift)": stats.build_model_drivetrain_comparison(
-                updated_active_df, [("Skoda", "Enyaq"), ("Volkswagen", "ID.4")]
-            ),
-        }
-
-        chart_specs = []
-        for brand, brand_df in stats.build_price_vs_km_by_brand(updated_active_df).items():
-            title = f"Pris vs. km — {brand}"
-            stat_tables[title] = brand_df
-            chart_specs.append({"table_title": title, "chart_title": f"Pris vs. kilometerstand — {brand} (farge=batteristørrelse)"})
-
-        drivetrain_titles = {"4x4": "Pris vs. km — 4x4 (alle merker)", "2-hjulsdrift": "Pris vs. km — 2-hjulsdrift (alle merker)"}
-        for category, drivetrain_df in stats.build_price_vs_km_by_drivetrain(updated_active_df).items():
-            title = drivetrain_titles[category]
-            stat_tables[title] = drivetrain_df
-            chart_specs.append(
-                {"table_title": title, "chart_title": f"Pris vs. kilometerstand — {category} (alle merker, farge=merke)"}
-            )
-
         try:
-            layout = sheets_client.write_stats_tables(spreadsheet, stat_tables)
-            sheets_client.apply_grouped_scatter_charts(spreadsheet, layout, chart_specs)
+            refresh_statistics(spreadsheet, active_df, history_df, _listings_to_df(all_listings))
         except Exception as exc:
             # Statistikk/diagram er et tillegg -- en feil her skal ikke gjøre at
             # allerede skrevne Aktive Annonser/scoring regnes som en mislykket kjøring.

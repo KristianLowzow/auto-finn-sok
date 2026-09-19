@@ -422,10 +422,14 @@ def apply_grouped_scatter_charts(spreadsheet, layout, chart_specs):
         if "Kilometerstand" not in columns or not series_cols:
             continue
 
-        def col_range(col_name, info=info):
+        # Header-raden (rett over data_start_row) tas MED i range-en for både
+        # domene og hver serie -- det er det som får Sheets til å plukke opp
+        # kolonnenavnet ("Pris (77 kWh)", "Pris (Skoda)", ...) som synlig
+        # serienavn i tegnforklaringen, i stedet for et generisk "Serie 1".
+        def col_range(col_name, info=info, include_header=False):
             return {
                 "sheetId": sheet_id,
-                "startRowIndex": info["data_start_row"],
+                "startRowIndex": info["data_start_row"] - (1 if include_header else 0),
                 "endRowIndex": info["data_end_row"] + 1,
                 "startColumnIndex": columns.index(col_name),
                 "endColumnIndex": columns.index(col_name) + 1,
@@ -440,13 +444,19 @@ def apply_grouped_scatter_charts(spreadsheet, layout, chart_specs):
                             "basicChart": {
                                 "chartType": "SCATTER",
                                 "legendPosition": "RIGHT_LEGEND" if len(series_cols) > 1 else "NO_LEGEND",
+                                "headerCount": 1,
                                 "axis": [
                                     {"position": "BOTTOM_AXIS", "title": "Kilometerstand"},
                                     {"position": "LEFT_AXIS", "title": "Pris"},
                                 ],
-                                "domains": [{"domain": {"sourceRange": {"sources": [col_range("Kilometerstand")]}}}],
+                                "domains": [
+                                    {"domain": {"sourceRange": {"sources": [col_range("Kilometerstand", include_header=True)]}}}
+                                ],
                                 "series": [
-                                    {"series": {"sourceRange": {"sources": [col_range(c)]}}, "targetAxis": "LEFT_AXIS"}
+                                    {
+                                        "series": {"sourceRange": {"sources": [col_range(c, include_header=True)]}},
+                                        "targetAxis": "LEFT_AXIS",
+                                    }
                                     for c in series_cols
                                 ],
                             },
