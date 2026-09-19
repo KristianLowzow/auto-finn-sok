@@ -16,14 +16,25 @@ avvik fra det, til personlig bruk i lavt volum -- ikke videresalg eller
 publisering av dataene. For å holde belastningen lav og skånsom:
 
 - Skanning skjer sjelden (standard én gang i døgnet, du kan justere selv -- se under).
-- Hver kjøring gjør få kall (kun søkesider + detaljside for *nye* annonser),
-  med tilfeldige pauser mellom hvert kall.
+- Hver kjøring henter kun søkesider + detaljside for *nye* annonser (aldri på
+  nytt for annonser som allerede er kjent), med tilfeldige pauser mellom
+  hvert kall.
 - Ved tegn på blokkering (403/429) gir kjøringen opp med det samme i stedet
   for å presse på.
 
 Du bør selv vurdere om dette er greit for ditt bruk. Vurder å redusere
 frekvens/antall merker ytterligere hvis du ser gjentatte "Blokkert"-meldinger
 i Kjørelogg-fanen.
+
+**Merk:** det finnes ikke lenger noe tak på hvor mange nye annonser som
+hentes i én kjøring -- alt innenfor filteret i Merker-fanen hentes samme
+kjøring, uansett hvor mange det er. I praksis betyr det at en kjøring rett
+etter at Aktive Annonser er tømt (eller etter en lang periode uten skanning)
+kan ta betydelig lengre tid -- potensielt over en time -- og gjøre langt
+flere kall til Finn.no enn en vanlig "vedlikeholds"-kjøring der de fleste
+annonsene allerede er kjent. Hvis du følger flere merker/modeller med veldig
+mange treff hver, bør du selv vurdere om dette fortsatt er innenfor det du
+er komfortabel med.
 
 ## Étt-gangs oppsett
 

@@ -16,7 +16,11 @@ concurrency:
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Ingen tak lenger på antall nye annonser som hentes per kjøring (se
+    # config.py) -- en kjøring med mye å ta igjen (f.eks. rett etter at
+    # Aktive Annonser er tømt) kan derfor ta betydelig lengre tid enn de
+    # 20 minuttene som holdt da 40-per-kjøring-taket fantes.
+    timeout-minutes: 300
     steps:
       - uses: actions/checkout@v4
 

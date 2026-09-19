@@ -48,8 +48,12 @@ LONG_PAUSE_EVERY_N_REQUESTS = 20
 LONG_PAUSE_MIN_S = 10.0
 LONG_PAUSE_MAX_S = 20.0
 BACKOFF_SCHEDULE_S = [30, 60, 120]
-MAX_SEARCH_PAGES_PER_QUERY = 10  # sikkerhetstak, ~46 annonser/side
-MAX_NEW_DETAIL_FETCHES_PER_RUN = 40  # resten tas neste kjøring
+# Ingen tak på antall nye detaljhentinger per kjøring lenger -- ALLE nye
+# annonser innenfor filteret hentes samme kjøring, uansett hvor mange det er.
+# Det betyr at én kjøring kan ta betydelig lengre tid ved en stor "innhenting"
+# (f.eks. rett etter at Aktive Annonser er tømt) -- se timeout-minutes i
+# periodic_scan.yml, som er satt høyt nok til å tåle det.
+MAX_SEARCH_PAGES_PER_QUERY = 50  # sikkerhetstak mot evigvarende paginering, ~46 annonser/side
 
 USER_AGENTS = [
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "

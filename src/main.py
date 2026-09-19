@@ -86,9 +86,6 @@ def _process_brand_model(client, spreadsheet, setting, all_active_listings, now_
 
     new_listings = []
     for finn_id in new_ids:
-        if len(new_listings) >= config.MAX_NEW_DETAIL_FETCHES_PER_RUN:
-            logger.info("Nådde grense for nye detaljhentinger, resten tas neste kjøring (%s %s)", merke, modell)
-            break
         entry = entries_by_id[finn_id]
         try:
             detail = scraper.fetch_detail(client, finn_id, entry["url"])
